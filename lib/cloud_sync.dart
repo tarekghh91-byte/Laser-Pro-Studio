@@ -1,3 +1,4 @@
+// Milestone 0.2: test-only cloud sync transport; conflict resolution UI pending.
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CloudRecord {
