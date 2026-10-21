@@ -1,0 +1,700 @@
+import 'dart:convert';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
+
+void main() {
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const LaserProApp());
+}
+
+const ink = Color(0xFF17191F);
+const gold = Color(0xFFDAAF69);
+const panel = Color(0xFF232630);
+
+// Editable later in Settings. This is the current project estimate.
+const double laserWatts = 216;
+const double electricityPerKwh = 0.90;
+double laserElectricity(double minutes) =>
+    minutes * laserWatts / 1000 / 60 * electricityPerKwh;
+
+class UsedMaterial {
+  UsedMaterial({required this.id, required this.name, required this.unit,
+    required this.category, required this.amount, required this.unitCost,
+    this.widthCm, this.heightCm});
+  final String id, name, unit, category;
+  final double amount, unitCost;
+  final double? widthCm, heightCm;
+  double get cost => amount * unitCost;
+  Map<String, dynamic> toJson() => {
+    'id': id, 'name': name, 'unit': unit, 'category': category,
+    'amount': amount, 'unitCost': unitCost,
+    'widthCm': widthCm, 'heightCm': heightCm,
+  };
+  factory UsedMaterial.fromJson(Map<String, dynamic> j) => UsedMaterial(
+    id: j['id'] as String? ?? '', name: j['name'] as String? ?? '',
+    unit: j['unit'] as String? ?? 'قطعة',
+    category: j['category'] as String? ?? 'مواد',
+    amount: (j['amount'] as num? ?? 0).toDouble(),
+    unitCost: (j['unitCost'] as num? ?? 0).toDouble(),
+    widthCm: (j['widthCm'] as num?)?.toDouble(),
+    heightCm: (j['heightCm'] as num?)?.toDouble(),
+  );
+}
+
+class Order {
+  Order({required this.id, required this.customer, required this.product,
+    required this.dueDate, required this.price, required this.paid,
+    required this.materialCost, required this.status, required this.createdAt,
+    this.notes = '', List<UsedMaterial>? usedMaterials,
+    this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
+      : usedMaterials = usedMaterials ?? [];
+  final String id;
+  String customer;
+  String product;
+  DateTime dueDate;
+  double price;
+  double paid;
+  double materialCost;
+  String status;
+  DateTime createdAt;
+  String notes;
+  List<UsedMaterial> usedMaterials;
+  double laserMinutes;
+  double electricCost;
+  bool inventoryDeducted;
+  double get outstanding => price - paid;
+  double get totalCost => materialCost + electricCost;
+  double get grossMargin => price - totalCost;
+  Map<String, dynamic> toJson() => {
+    'id': id, 'customer': customer, 'product': product,
+    'dueDate': dueDate.toIso8601String(), 'price': price, 'paid': paid,
+    'materialCost': materialCost, 'status': status,
+    'createdAt': createdAt.toIso8601String(), 'notes': notes,
+    'usedMaterials': usedMaterials.map((e) => e.toJson()).toList(),
+    'laserMinutes': laserMinutes, 'electricCost': electricCost,
+    'inventoryDeducted': inventoryDeducted,
+  };
+  factory Order.fromJson(Map<String, dynamic> j) => Order(
+    id: j['id'] as String, customer: j['customer'] as String,
+    product: j['product'] as String,
+    dueDate: DateTime.parse(j['dueDate'] as String),
+    price: (j['price'] as num).toDouble(),
+    paid: (j['paid'] as num).toDouble(),
+    materialCost: (j['materialCost'] as num? ?? 0).toDouble(),
+    status: j['status'] as String,
+    createdAt: DateTime.parse(j['createdAt'] as String),
+    notes: j['notes'] as String? ?? '',
+    usedMaterials: (j['usedMaterials'] as List<dynamic>? ?? [])
+      .map((e) => UsedMaterial.fromJson(e as Map<String, dynamic>)).toList(),
+    laserMinutes: (j['laserMinutes'] as num? ?? 0).toDouble(),
+    electricCost: (j['electricCost'] as num? ?? 0).toDouble(),
+    inventoryDeducted: j['inventoryDeducted'] as bool? ?? false,
+  );
+}
+
+class Material {
+  Material({required this.id, required this.name, required this.quantity,
+    required this.unit, required this.reorderLevel, required this.unitCost,
+    this.category = 'مواد', this.packUnits = 1});
+  final String id;
+  String name;
+  double quantity;
+  String unit;
+  double reorderLevel;
+  double unitCost;
+  String category;
+  double packUnits;
+  Map<String, dynamic> toJson() => {
+    'id': id, 'name': name, 'quantity': quantity, 'unit': unit,
+    'reorderLevel': reorderLevel, 'unitCost': unitCost, 'category': category,
+    'packUnits': packUnits,
+  };
+  factory Material.fromJson(Map<String, dynamic> j) => Material(
+    id: j['id'] as String, name: j['name'] as String,
+    quantity: (j['quantity'] as num).toDouble(), unit: j['unit'] as String,
+    reorderLevel: (j['reorderLevel'] as num).toDouble(),
+    unitCost: (j['unitCost'] as num).toDouble(),
+    category: j['category'] as String? ?? 'مواد',
+    packUnits: (j['packUnits'] as num? ?? 1).toDouble(),
+  );
+}
+
+class StudioStore extends ChangeNotifier {
+  final List<Order> orders = [];
+  final List<Material> materials = [];
+  bool loading = true;
+  String? error;
+  File? _file;
+  Future<void> load() async {
+    try {
+      final folder = await getApplicationSupportDirectory();
+      _file = File('${folder.path}${Platform.pathSeparator}laser_pro_data.json');
+      if (await _file!.exists()) {
+        final j = jsonDecode(await _file!.readAsString()) as Map<String, dynamic>;
+        orders.addAll((j['orders'] as List<dynamic>? ?? []).map(
+          (e) => Order.fromJson(e as Map<String, dynamic>)));
+        materials.addAll((j['materials'] as List<dynamic>? ?? []).map(
+          (e) => Material.fromJson(e as Map<String, dynamic>)));
+      }
+    } catch (e) {
+      error = 'تعذّر قراءة البيانات المحلية: $e';
+    } finally {
+      loading = false;
+      notifyListeners();
+    }
+  }
+  Future<void> _save() async {
+    if (_file == null) throw StateError('التخزين المحلي غير متاح');
+    final temp = File('${_file!.path}.tmp');
+    final content = jsonEncode({
+      'schemaVersion': 2,
+      'orders': orders.map((e) => e.toJson()).toList(),
+      'materials': materials.map((e) => e.toJson()).toList(),
+    });
+    await temp.writeAsString(content, flush: true);
+    if (await _file!.exists()) {
+      final backup = File('${_file!.path}.bak');
+      await _file!.copy(backup.path);
+      await _file!.delete();
+    }
+    await temp.rename(_file!.path);
+    notifyListeners();
+  }
+  Future<void> addOrder(Order order) async { orders.add(order); await _save(); }
+  Future<void> updateOrder() async => _save();
+  Future<void> addMaterial(Material material) async { materials.add(material); await _save(); }
+  Future<void> updateMaterial() async => _save();
+  Future<String?> confirmMaterialUsage(Order o) async {
+    if (o.inventoryDeducted) return 'المواد مخصومة مسبقاً';
+    if (o.usedMaterials.isEmpty) return 'ما في مواد مسجّلة';
+    final needed = <String, double>{};
+    for (final line in o.usedMaterials) {
+      needed[line.id] = (needed[line.id] ?? 0) + line.amount;
+    }
+    for (final entry in needed.entries) {
+      final found = materials.where((m) => m.id == entry.key);
+      if (found.isEmpty) return 'في مادة مش موجودة بالمخزون';
+      if (found.first.quantity + 1e-8 < entry.value) {
+        return 'ما في كمية كافية من ${found.first.name}';
+      }
+    }
+    for (final entry in needed.entries) {
+      materials.firstWhere((m) => m.id == entry.key).quantity -= entry.value;
+    }
+    o.inventoryDeducted = true;
+    try {
+      await _save();
+    } catch (_) {
+      for (final entry in needed.entries) {
+        materials.firstWhere((m) => m.id == entry.key).quantity += entry.value;
+      }
+      o.inventoryDeducted = false;
+      rethrow;
+    }
+    return null;
+  }
+}
+
+class LaserProApp extends StatefulWidget {
+  const LaserProApp({super.key});
+  @override State<LaserProApp> createState() => _LaserProAppState();
+}
+class _LaserProAppState extends State<LaserProApp> {
+  final store = StudioStore();
+  @override void initState() { super.initState(); store.load(); }
+  @override void dispose() { store.dispose(); super.dispose(); }
+  @override Widget build(BuildContext context) => MaterialApp(
+    debugShowCheckedModeBanner: false,
+    title: 'Laser Pro Studio',
+    theme: ThemeData(useMaterial3: true, brightness: Brightness.dark,
+      scaffoldBackgroundColor: ink, colorSchemeSeed: gold,
+      cardTheme: CardThemeData(color: panel, shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16))),
+      inputDecorationTheme: InputDecorationTheme(border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(12)))),
+    home: Directionality(textDirection: TextDirection.rtl,
+      child: AnimatedBuilder(animation: store,
+        builder: (_, __) => StudioShell(store: store))),
+  );
+}
+
+class StudioShell extends StatefulWidget {
+  const StudioShell({super.key, required this.store});
+  final StudioStore store;
+  @override State<StudioShell> createState() => _StudioShellState();
+}
+class _StudioShellState extends State<StudioShell> {
+  int tab = 0;
+  static const labels = ['الرئيسية', 'طلباتي', 'المخزون', 'الحسابات'];
+  static const icons = [Icons.dashboard_outlined, Icons.receipt_long_outlined,
+    Icons.inventory_2_outlined, Icons.bar_chart_outlined];
+  @override Widget build(BuildContext context) {
+    final store = widget.store;
+    if (store.loading) return const Scaffold(body: Center(child: CircularProgressIndicator()));
+    if (store.error != null) return Scaffold(body: Center(child: Padding(
+      padding: const EdgeInsets.all(24), child: Text(store.error!))));
+    final isWide = MediaQuery.sizeOf(context).width >= 760;
+    final pages = [HomePage(store: store, newOrder: () => showOrderForm(context, store)),
+      OrdersPage(store: store, newOrder: () => showOrderForm(context, store)),
+      InventoryPage(store: store), AccountsPage(store: store)];
+    return Scaffold(
+      appBar: AppBar(backgroundColor: ink,
+        title: const Text('LASER PRO  /  STUDIO', style: TextStyle(
+          fontWeight: FontWeight.w800, letterSpacing: 1, color: gold)),
+        actions: [Padding(padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: Center(child: Text('محفوظ محلياً • بلا مزامنة',
+            style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: .65)))))],
+      ),
+      body: Row(children: [
+        if (isWide) NavigationRail(
+          backgroundColor: panel, selectedIndex: tab,
+          onDestinationSelected: (v) => setState(() => tab = v),
+          labelType: NavigationRailLabelType.all,
+          destinations: [for (var i = 0; i < labels.length; i++)
+            NavigationRailDestination(icon: Icon(icons[i]), label: Text(labels[i]))]),
+        Expanded(child: pages[tab]),
+      ]),
+      bottomNavigationBar: isWide ? null : NavigationBar(
+        selectedIndex: tab, onDestinationSelected: (v) => setState(() => tab = v),
+        destinations: [for (var i = 0; i < labels.length; i++)
+          NavigationDestination(icon: Icon(icons[i]), label: labels[i])]),
+      floatingActionButton: tab <= 1 ? FloatingActionButton.extended(
+        onPressed: () => showOrderForm(context, store),
+        icon: const Icon(Icons.add), label: const Text('طلب جديد')) : null,
+    );
+  }
+}
+
+String money(num value) => '\$${value.toStringAsFixed(2)}';
+String date(DateTime value) => '${value.day}/${value.month}/${value.year}';
+Widget section(String title, Widget child) => Column(
+  crossAxisAlignment: CrossAxisAlignment.start, children: [
+    Padding(padding: const EdgeInsets.only(bottom: 10), child: Text(title,
+      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700))), child]);
+Widget content(List<Widget> children) => ListView(padding: const EdgeInsets.all(20), children: children);
+
+class HomePage extends StatelessWidget {
+  const HomePage({super.key, required this.store, required this.newOrder});
+  final StudioStore store;
+  final VoidCallback newOrder;
+  @override Widget build(BuildContext context) {
+    final open = store.orders.where((o) => o.status != 'تم التسليم').toList();
+    final due = open.where((o) => !o.dueDate.isAfter(DateTime.now().add(const Duration(days: 1)))).toList();
+    final need = store.materials.where((m) => m.quantity <= m.reorderLevel).toList();
+    final debt = store.orders.fold<double>(0, (sum, o) => sum + (o.outstanding > 0 ? o.outstanding : 0));
+    return content([
+      const Text('مساعد اليوم', style: TextStyle(color: gold, fontSize: 25, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 8),
+      const Text('كل شغلك بمكان واحد — من غير عجقة.'),
+      const SizedBox(height: 18),
+      Wrap(spacing: 10, runSpacing: 10, children: [
+        _metric('قيد التنفيذ', '${open.length}', Icons.handyman_outlined),
+        _metric('لازم تسلّم', '${due.length}', Icons.local_shipping_outlined),
+        _metric('لازم تقبض', money(debt), Icons.payments_outlined),
+        _metric('لازم تشتري', '${need.length}', Icons.shopping_cart_outlined),
+      ]),
+      const SizedBox(height: 28),
+      section('قيد التنفيذ · افتح الطلب', open.isEmpty
+        ? const Text('ما في طلبات قيد التنفيذ حالياً.')
+        : Column(children: open.map((o) => OrderTile(order: o, store: store)).toList())),
+      const SizedBox(height: 20),
+      section('شو لازم تشتري؟', need.isEmpty
+        ? const Text('ما في نواقص مسجّلة بالمخزون.')
+        : Column(children: need.map((m) => ListTile(
+            title: Text(m.name), subtitle: Text('${m.quantity} ${m.unit} متبقّي'))).toList())),
+    ]);
+  }
+  Widget _metric(String title, String value, IconData icon) => SizedBox(width: 165,
+    child: Card(child: Padding(padding: const EdgeInsets.all(15), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Icon(icon, color: gold), const SizedBox(height: 14),
+        Text(value, style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+        Text(title, style: const TextStyle(fontSize: 12)),
+      ]))));
+}
+
+class OrdersPage extends StatelessWidget {
+  const OrdersPage({super.key, required this.store, required this.newOrder});
+  final StudioStore store;
+  final VoidCallback newOrder;
+  @override Widget build(BuildContext context) => content([
+    section('طلباتي (${store.orders.length})', store.orders.isEmpty
+      ? const Text('ما عندك طلبات بعد. اضغط "طلب جديد" للبدء.')
+      : Column(children: [...store.orders.reversed.map((o) => OrderTile(order: o, store: store))])),
+  ]);
+}
+class OrderTile extends StatelessWidget {
+  const OrderTile({super.key, required this.order, required this.store});
+  final Order order;
+  final StudioStore store;
+  @override Widget build(BuildContext context) => Card(child: ListTile(
+    title: Text('${order.product} — ${order.customer}'),
+    subtitle: Text('التسليم: ${date(order.dueDate)}  •  ${order.status}  •  باقي ${money(order.outstanding)}'),
+    trailing: const Icon(Icons.open_in_new, color: gold),
+    onTap: () => showDialog<void>(context: context, builder: (context) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(title: Text('طلب ${order.customer}'), content: SizedBox(
+        width: 450, child: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('المنتج: ${order.product}'),
+            Text('التسليم: ${date(order.dueDate)}'),
+            Text('السعر: ${money(order.price)}'),
+            Text('المقبوض: ${money(order.paid)}'),
+            Text('الباقي: ${money(order.outstanding)}'),
+            const Divider(),
+            const Text('تفاصيل تكلفة الطلب', style: TextStyle(fontWeight: FontWeight.bold)),
+            for (final line in order.usedMaterials)
+              costLine('${line.name} (${line.amount.toStringAsFixed(2)} ${line.unit})', line.cost),
+            if (order.usedMaterials.isEmpty)
+              const Text('هيدا طلب قديم، تكلفته المسجّلة محفوظة.'),
+            costLine('المواد والتغليف', order.materialCost),
+            costLine('كهرباء الليزر (${order.laserMinutes.toStringAsFixed(0)} دقيقة)', order.electricCost),
+            const Divider(),
+            costLine('مجموع التكلفة', order.totalCost, bold: true),
+            costLine('الربح بعد التكاليف المباشرة', order.grossMargin, bold: true),
+            Text(order.inventoryDeducted ? 'المواد انخصمت من المخزون' : 'المواد مش مخصومة من المخزون بعد',
+              style: TextStyle(color: order.inventoryDeducted ? Colors.greenAccent : Colors.orangeAccent)),
+            if (order.notes.isNotEmpty) Text('ملاحظات: ${order.notes}'),
+            const SizedBox(height: 15),
+            if (!order.inventoryDeducted && order.usedMaterials.isNotEmpty)
+              FilledButton.tonalIcon(icon: const Icon(Icons.inventory_outlined),
+                label: const Text('تأكيد استهلاك المواد وخصمها'),
+                onPressed: () async {
+                  final message = await store.confirmMaterialUsage(order);
+                  if (!context.mounted) return;
+                  if (message != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+                  } else {
+                    Navigator.pop(context);
+                  }
+                }),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(value: order.status,
+              decoration: const InputDecoration(labelText: 'حالة الطلب'),
+              items: ['جديد', 'قيد التنفيذ', 'جاهز', 'تم التسليم']
+                .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
+              onChanged: (v) async { if (v != null) { order.status = v; await store.updateOrder(); } }),
+            const SizedBox(height: 10),
+            FilledButton(onPressed: () async {
+              final controller = TextEditingController(text: order.paid.toStringAsFixed(2));
+              final result = await showDialog<String>(context: context,
+                builder: (ctx) => AlertDialog(title: const Text('المبلغ المقبوض الإجمالي'),
+                  content: TextField(controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
+                  actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+                    FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('حفظ'))]));
+              final n = double.tryParse(result ?? '');
+              if (n != null && n >= 0 && n <= order.price) { order.paid = n; await store.updateOrder(); }
+            }, child: const Text('تحديث المقبوض')),
+          ]))), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق'))])))));
+}
+
+// The user enters only quantities/measurements, never a guessed dollar cost.
+Future<UsedMaterial?> chooseUsedMaterial(BuildContext context, StudioStore store) async {
+  if (store.materials.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+      content: Text('ضيف المواد وأسعارها بالمخزون أولاً')));
+    return null;
+  }
+  var chosenId = store.materials.first.id;
+  final amount = TextEditingController();
+  final width = TextEditingController();
+  final height = TextEditingController();
+  final chosen = await showDialog<UsedMaterial>(context: context,
+    builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
+      final material = store.materials.firstWhere((m) => m.id == chosenId);
+      final area = material.unit == 'سم²';
+      final q = area
+          ? (double.tryParse(width.text) ?? 0) * (double.tryParse(height.text) ?? 0)
+          : double.tryParse(amount.text) ?? 0;
+      return Directionality(textDirection: TextDirection.rtl,
+        child: AlertDialog(title: const Text('شو استعملت من المواد؟'),
+          content: SizedBox(width: 420, child: SingleChildScrollView(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButtonFormField<String>(value: chosenId, isExpanded: true,
+                decoration: const InputDecoration(labelText: 'اختر المادة من المخزون'),
+                items: store.materials.map((m) => DropdownMenuItem(
+                  value: m.id, child: Text('${m.name} — ${m.unit}', overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (v) { if (v != null) refresh(() {
+                  chosenId = v; amount.clear(); width.clear(); height.clear();
+                }); }),
+              const SizedBox(height: 10),
+              if (area) ...[
+                TextField(controller: width, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'طول الخشب المستخدم (سم)'),
+                  onChanged: (_) => refresh(() {})),
+                const SizedBox(height: 10),
+                TextField(controller: height, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: const InputDecoration(labelText: 'عرض الخشب المستخدم (سم)'),
+                  onChanged: (_) => refresh(() {})),
+              ] else TextField(controller: amount,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(labelText: 'الكمية المستخدمة (${material.unit})'),
+                onChanged: (_) => refresh(() {})),
+              const SizedBox(height: 14),
+              Text('المتوفر: ${material.quantity.toStringAsFixed(2)} ${material.unit}'),
+              Text('التكلفة المحسوبة: ${money(q * material.unitCost)}',
+                style: const TextStyle(color: gold, fontWeight: FontWeight.bold)),
+              if (q > material.quantity)
+                const Text('تنبيه: الاستهلاك أكبر من الكمية المتوفرة',
+                  style: TextStyle(color: Colors.orangeAccent)),
+            ]))),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            FilledButton(onPressed: () {
+              if (q <= 0 || !q.isFinite) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('أدخل قياس أو كمية صحيحة')));
+                return;
+              }
+              Navigator.pop(ctx, UsedMaterial(id: material.id, name: material.name,
+                unit: material.unit, category: material.category, amount: q,
+                unitCost: material.unitCost,
+                widthCm: area ? double.tryParse(width.text) : null,
+                heightCm: area ? double.tryParse(height.text) : null));
+            }, child: const Text('إضافة المادة'))],
+        ));
+    }));
+  amount.dispose(); width.dispose(); height.dispose();
+  return chosen;
+}
+
+Widget costLine(String title, double value, {bool bold = false}) => Padding(
+  padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
+    Expanded(child: Text(title, style: TextStyle(fontWeight: bold ? FontWeight.w700 : FontWeight.normal))),
+    Text(money(value), style: TextStyle(color: gold,
+      fontWeight: bold ? FontWeight.w700 : FontWeight.normal)),
+  ]));
+
+Future<void> showOrderForm(BuildContext context, StudioStore store) async {
+  final customer = TextEditingController();
+  final product = TextEditingController();
+  final price = TextEditingController();
+  final paid = TextEditingController(text: '0');
+  final laserMinutes = TextEditingController(text: '0');
+  final used = <UsedMaterial>[];
+  final notes = TextEditingController();
+  DateTime due = DateTime.now().add(const Duration(days: 3));
+  final key = GlobalKey<FormState>();
+  await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
+    builder: (ctx, setForm) {
+      final materialCost = used.fold<double>(0, (sum, item) => sum + item.cost);
+      final minutes = double.tryParse(laserMinutes.text) ?? 0;
+      final electricity = laserElectricity(minutes);
+      final priceValue = double.tryParse(price.text) ?? 0;
+      return Directionality(textDirection: TextDirection.rtl,
+      child: AlertDialog(title: const Text('طلب جديد'), content: SizedBox(width: 480,
+        child: Form(key: key, child: SingleChildScrollView(child: Column(
+          mainAxisSize: MainAxisSize.min, children: [
+            _field('اسم الزبون', customer, required: true),
+            _field('اسم المنتج', product, required: true),
+            TextFormField(controller: price,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'سعر البيع بالدولار'),
+              validator: (v) => (double.tryParse(v ?? '') ?? -1) < 0 ? 'أدخل سعر بيع صحيح' : null,
+              onChanged: (_) => setForm(() {})),
+            const SizedBox(height: 10),
+            _field('الدفعة المقبوضة', paid, numeric: true),
+            const SizedBox(height: 12),
+            const Text('المواد المستخدمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+            if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+              child: Text('اختار الخشب أو الأكريليك أو التغليف من مخزونك.')),
+            ...used.asMap().entries.map((e) => ListTile(dense: true,
+              title: Text(e.value.name),
+              subtitle: Text('${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(money(e.value.cost), style: const TextStyle(color: gold)),
+                IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
+                  onPressed: () => setForm(() => used.removeAt(e.key))),
+              ]))),
+            OutlinedButton.icon(icon: const Icon(Icons.add),
+              label: const Text('إضافة مادة من المخزون'),
+              onPressed: () async {
+                final line = await chooseUsedMaterial(ctx, store);
+                if (line != null) setForm(() => used.add(line));
+              }),
+            const SizedBox(height: 12),
+            TextFormField(controller: laserMinutes,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'دقائق تشغيل الليزر فقط'),
+              onChanged: (_) => setForm(() {})),
+            const Padding(padding: EdgeInsets.symmetric(vertical: 7),
+              child: Text('تقدير الكهرباء: 216 واط × 0.90 دولار/كيلوواط ساعة. بلا حساب وقت شغلك.',
+                style: TextStyle(fontSize: 11, color: Colors.white70))),
+            Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+              costLine('المواد والتغليف', materialCost),
+              costLine('كهرباء الليزر', electricity),
+              const Divider(),
+              costLine('إجمالي تكلفة الطلب', materialCost + electricity, bold: true),
+              costLine('ربح الطلب بعد التكاليف المباشرة', priceValue - materialCost - electricity, bold: true),
+            ]))),
+            const SizedBox(height: 10),
+            _field('ملاحظات', notes),
+            ListTile(title: const Text('موعد التسليم'), subtitle: Text(date(due)),
+              trailing: const Icon(Icons.event), onTap: () async {
+                final value = await showDatePicker(context: ctx, initialDate: due,
+                  firstDate: DateTime(2020), lastDate: DateTime(2100));
+                if (value != null) setForm(() => due = value);
+              }),
+          ])))), actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+            FilledButton(onPressed: () async {
+              if (!key.currentState!.validate()) return;
+              final p = double.tryParse(price.text) ?? -1;
+              final a = double.tryParse(paid.text) ?? -1;
+              final duration = double.tryParse(laserMinutes.text) ?? -1;
+              if (p < 0 || a < 0 || a > p || duration < 0 || !duration.isFinite || used.isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر والدفعة ودقائق الليزر، ولازم تختار مادة على الأقل')));
+                return;
+              }
+              try {
+                await store.addOrder(Order(id: DateTime.now().microsecondsSinceEpoch.toString(),
+                  customer: customer.text.trim(), product: product.text.trim(),
+                  dueDate: due, price: p, paid: a, materialCost: materialCost,
+                  usedMaterials: List.of(used), laserMinutes: duration,
+                  electricCost: laserElectricity(duration),
+                  status: 'جديد', createdAt: DateTime.now(), notes: notes.text.trim()));
+                if (ctx.mounted) Navigator.pop(ctx);
+              } catch (e) { if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('فشل الحفظ: $e'))); }
+            }, child: const Text('حفظ الطلب')),
+          ]));
+    }));
+  for (final c in [customer, product, price, paid, laserMinutes, notes]) { c.dispose(); }
+}
+Widget _field(String label, TextEditingController controller,
+    {bool numeric = false, bool required = false}) => Padding(
+  padding: const EdgeInsets.only(bottom: 10),
+  child: TextFormField(controller: controller,
+    keyboardType: numeric ? const TextInputType.numberWithOptions(decimal: true) : TextInputType.text,
+    decoration: InputDecoration(labelText: label),
+    validator: (value) => required && (value == null || value.trim().isEmpty)
+      ? 'هالخانة مطلوبة' : numeric && value != null && value.isNotEmpty && double.tryParse(value) == null
+      ? 'اكتب رقم صحيح' : null));
+
+class InventoryPage extends StatelessWidget {
+  const InventoryPage({super.key, required this.store});
+  final StudioStore store;
+  @override Widget build(BuildContext context) => content([
+    Row(children: [const Expanded(child: Text('المخزون', style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold))),
+      FilledButton.icon(onPressed: () => _addMaterial(context), icon: const Icon(Icons.add), label: const Text('مادة جديدة'))]),
+    const SizedBox(height: 12),
+    if (store.materials.isEmpty) const Text('بعد ما أضفت مواد. ابدأ بالخشب، الأكريليك، والتغليف.'),
+    ...store.materials.map((m) => Card(child: ListTile(
+      title: Text(m.name),
+      subtitle: Text('${m.category} • ${m.quantity.toStringAsFixed(2)} ${m.unit} • سعر ${m.unit} ${m.unitCost.toStringAsFixed(6)} دولار'),
+      trailing: m.quantity <= m.reorderLevel ? const Icon(Icons.warning_amber, color: gold) : null,
+      onTap: () async {
+        final input = TextEditingController(text: m.quantity.toString());
+        final price = TextEditingController(text: (m.unitCost * m.packUnits).toStringAsFixed(3));
+        final value = await showDialog<List<double>>(context: context,
+          builder: (ctx) => AlertDialog(title: Text('تعديل ${m.name}'),
+            content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _field('الكمية الحالية (${m.unit})', input, numeric: true),
+              _field('سعر اللوح/الرول/العبوة', price, numeric: true),
+            ])),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+              FilledButton(onPressed: () {
+                final n = double.tryParse(input.text);
+                final c = double.tryParse(price.text);
+                if (n != null && c != null && n.isFinite && c.isFinite && n >= 0 && c >= 0) {
+                  Navigator.pop(ctx, [n, c]);
+                }
+              }, child: const Text('حفظ'))]));
+        if (value != null) {
+          m.quantity = value[0];
+          m.unitCost = value[1] / m.packUnits;
+          await store.updateMaterial();
+        }
+        input.dispose(); price.dispose();
+      }))),
+    const SizedBox(height: 18),
+    const Text('بتختار المواد داخل الطلب. عند تأكيد استهلاكها بتنخصم من المخزون مرة واحدة فقط.',
+      style: TextStyle(color: Colors.white70)),
+  ]);
+  Future<void> _addMaterial(BuildContext context) async {
+    final name = TextEditingController(); final qty = TextEditingController(text: '0');
+    final limit = TextEditingController(text: '0');
+    final packCount = TextEditingController(text: '1');
+    final lengthCm = TextEditingController(text: '120');
+    final widthCm = TextEditingController(text: '80');
+    final rollMeters = TextEditingController(text: '10');
+    final packCost = TextEditingController(text: '0');
+    var unit = 'قطعة';
+    var category = 'خشب';
+    final key = GlobalKey<FormState>();
+    await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, update) => Directionality(textDirection: TextDirection.rtl,
+      child: AlertDialog(title: const Text('مادة جديدة'), content: SizedBox(width: 440,
+      child: Form(key: key, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+        _field('اسم المادة (مثل خشب MDF 3mm)', name, required: true),
+        DropdownButtonFormField<String>(value: category,
+          decoration: const InputDecoration(labelText: 'نوع المادة'),
+          items: ['خشب', 'أكريليك', 'تغليف', 'لاصق', 'دهان', 'أخرى']
+            .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+          onChanged: (v) { if (v != null) update(() => category = v); }),
+        const SizedBox(height: 10),
+        DropdownButtonFormField<String>(value: unit,
+          decoration: const InputDecoration(labelText: 'وحدة حساب الاستخدام'),
+          items: ['قطعة', 'سم²', 'سم', 'متر', 'غرام', 'مل']
+            .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+          onChanged: (v) { if (v != null) update(() => unit = v); }),
+        const SizedBox(height: 10),
+        _field('عدد الألواح أو الرولات أو العبوات الموجودة', qty, numeric: true, required: true),
+        _field('حد تنبيه النقص ($unit)', limit, numeric: true, required: true),
+        if (unit == 'سم²') ...[
+          _field('طول اللوح (سم)', lengthCm, numeric: true, required: true),
+          _field('عرض اللوح (سم)', widthCm, numeric: true, required: true),
+        ] else if (unit == 'سم')
+          _field('طول الرول (متر)', rollMeters, numeric: true, required: true)
+        else _field('كم $unit بالعبوة الواحدة؟', packCount, numeric: true, required: true),
+        _field('سعر اللوح أو الرول أو العبوة بالدولار', packCost, numeric: true, required: true),
+        const Text('البرنامج بيحوّل قياس اللوح للمساحة، وطول الرول للسنتيمتر، وبيحسب تكلفة الجزء المستخدم تلقائياً.',
+          style: TextStyle(fontSize: 12, color: Colors.white70)),
+      ])))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+        FilledButton(onPressed: () async {
+          if (!key.currentState!.validate()) return;
+          final packs = double.tryParse(qty.text) ?? -1;
+          final l = double.tryParse(limit.text) ?? -1;
+          final c = double.tryParse(packCost.text) ?? -1;
+          final count = unit == 'سم²'
+              ? (double.tryParse(lengthCm.text) ?? 0) * (double.tryParse(widthCm.text) ?? 0)
+              : unit == 'سم' ? (double.tryParse(rollMeters.text) ?? 0) * 100
+              : double.tryParse(packCount.text) ?? -1;
+          if (packs < 0 || l < 0 || c < 0 || count <= 0 ||
+              !packs.isFinite || !l.isFinite || !c.isFinite || !count.isFinite) {
+            ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع القياسات والكمية والسعر')));
+            return;
+          }
+          try {
+            await store.addMaterial(Material(id: DateTime.now().microsecondsSinceEpoch.toString(),
+              name: name.text.trim(), quantity: packs * count, unit: unit, category: category,
+              reorderLevel: l, unitCost: c / count, packUnits: count));
+            if (ctx.mounted) Navigator.pop(ctx);
+          } catch (e) { if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('$e'))); }
+        }, child: const Text('حفظ المادة'))]))));
+    for (final c in [name, qty, limit, packCount, packCost, lengthCm, widthCm, rollMeters]) { c.dispose(); }
+  }
+}
+
+class AccountsPage extends StatelessWidget {
+  const AccountsPage({super.key, required this.store});
+  final StudioStore store;
+  @override Widget build(BuildContext context) {
+    final sales = store.orders.fold<double>(0, (v, o) => v + o.price);
+    final paid = store.orders.fold<double>(0, (v, o) => v + o.paid);
+    final costs = store.orders.fold<double>(0, (v, o) => v + o.totalCost);
+    return content([
+      const Text('الحسابات', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+      const SizedBox(height: 18),
+      _accountCard('إجمالي المبيعات', sales), _accountCard('المقبوض', paid),
+      _accountCard('المتبقّي للقبض', sales - paid),
+      _accountCard('المواد والتغليف وكهرباء الليزر', costs),
+      _accountCard('ربح الطلبات بعد التكاليف المباشرة', sales - costs),
+      const SizedBox(height: 15),
+      const Text('الربح هون بعد المواد والتغليف وكهرباء الليزر، وقبل المصاريف العامة. بلا حساب أجرة ساعات شغلك.',
+        style: TextStyle(color: Colors.white70)),
+    ]);
+  }
+  Widget _accountCard(String name, double value) => Card(child: ListTile(
+    title: Text(name), trailing: Text(money(value),
+      style: const TextStyle(color: gold, fontSize: 18, fontWeight: FontWeight.bold))));
+}
