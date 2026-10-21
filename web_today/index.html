@@ -37,7 +37,46 @@ byId("dialogForm").onsubmit=async ev=>{ev.preventDefault();const f=byId("dialogF
 function htmlLoading(){byId("root").innerHTML='<div class="login card"><h2>Laser Pro Studio</h2><p class="muted">جاري تحميل بياناتك المحفوظة…</p></div>'}
 async function loginScreen(){byId("root").innerHTML='<div class="login card"><div class="logo">LASER PRO</div><h1>Studio</h1><p class="muted">نفس الحساب ونفس البيانات على التلفون واللابتوب.</p><form id="loginForm">'+field("email","البريد الإلكتروني","email","",'required autocomplete="email"')+field("pass","كلمة السر","password","",'required autocomplete="current-password"')+'<button class="primary" style="width:100%;margin-top:10px">تسجيل الدخول</button></form><p class="muted small">استخدم نفس حساب Supabase الذي دخلت به في التطبيق التجريبي. لا تفتح حساباً جديداً.</p></div>';
 byId("loginForm").onsubmit=async e=>{e.preventDefault();if(!SB)return notify("تعذر تحميل خدمة الاتصال، تأكد من الإنترنت وأعد فتح الصفحة",true);let f=new FormData(e.target);try{let {data,error}=await SB.auth.signInWithPassword({email:f.get("email"),password:f.get("pass")});if(error)throw error;user=data.user;await loadAll();render()}catch(x){err(x)}}}
-async function loadAll(){if(!user)return;let parts=await Promise.all(Object.keys(TABLES).map(async name=>{let {data,error}=await SB.from(TABLES[name]).select("*").order("created_at",{ascending:false}).limit(1000);if(error)throw error;return[name,data||[]]}));state.data=Object.fromEntries(parts);let r=await SB.from("lp_user_settings").select("prefs").eq("owner_id",user.id).maybeSingle();if(!r.error&&r.data){state.prefs=Object.assign({watts:216,kwh:.9},r.data.prefs||{});state.theme=state.prefs.theme||"royal"}document.body.dataset.theme=state.theme}
+async function loadAll(){if(!user)return;let parts=await Promise.all(Object.keys(TABLES).map(async name=>{let {data,error}=await SB.from(TABLES[name]).select("*").order("created_at",{ascending:false}).limit(1000);if(error)throw error;return[name,data||[]]}));state.data=Object.fromEntries(parts);if(!state.legacyChecked){state.legacyChecked=true;const imported=await importLegacyOnce();if(imported){const again=await Promise.all(Object.keys(TABLES).map(async name=>{let {data,error}=await SB.from(TABLES[name]).select('*').order('created_at',{ascending:false}).limit(1000);if(error)throw error;return [name,data||[]]}));state.data=Object.fromEntries(again)}}let r=await SB.from("lp_user_settings").select("prefs").eq("owner_id",user.id).maybeSingle();if(!r.error&&r.data){state.prefs=Object.assign({watts:216,kwh:.9},r.data.prefs||{});state.theme=state.prefs.theme||"royal"}document.body.dataset.theme=state.theme}
+// Move the user's Flutter prototype records to the web data model once, without
+// deleting or changing a single Flutter record. Stable IDs make it idempotent.
+async function importLegacyOnce(){
+let response=await SB.from("lp_sync_records").select("collection,record_id,payload").limit(300);
+if(response.error){console.warn("Legacy import unavailable",response.error);return false}
+let rows=response.data||[],changed=false;
+for(let rec of rows.filter(x=>x.collection==="materials")){
+ if(one("materials",rec.record_id))continue;
+ let x=rec.payload||{},b=x.boardInventory||null,kind=b?"wood":x.category==="تغليف"?"piece":"piece";
+ let full=b?N(b.widthCm)*N(b.heightCm):0;
+ let boards=b?(b.boards||[]).map(panel=>({id:panel.id||uid(),free:(panel.freeRects||[]).map(r=>({x:N(r.x),y:N(r.y),w:N(r.width),h:N(r.height)})),cuts:(panel.placements||[]).map(p=>({x:N(p.x),y:N(p.y),w:N(p.widthCm),h:N(p.heightCm),legacy:true}))})):[];
+ let spec=b?{kind:"wood",width_cm:N(b.widthCm),height_cm:N(b.heightCm),kerf_mm:N(b.kerfCm)*10,boards,legacy_id:rec.record_id}:{kind,legacy_id:rec.record_id};
+ let material={id:rec.record_id,owner_id:user.id,name:String(x.name||"مادة سابقة"),unit:b?"لوح":(x.unit||"قطعة"),
+ package_quantity:b?1:N(x.packUnits||1),package_price:b?N(x.unitCost):N(x.unitCost)*N(x.packUnits||1),
+ quantity_on_hand:b?boards.filter(q=>freeArea(q)>.01).length:N(x.quantity),specifications:spec,
+ low_stock_threshold:N(x.reorderLevel)};
+ const w=await SB.from("lp_materials").upsert(material,{onConflict:"id",ignoreDuplicates:true});
+ if(w.error)throw w.error;changed=true;
+}
+for(let rec of rows.filter(x=>x.collection==="orders")){
+ if(one("orders",rec.record_id))continue;
+ let x=rec.payload||{},statusMap={"جديد":"new","قيد التنفيذ":"working","جاهز":"ready","تم التسليم":"delivered"};
+ let lines=(x.usedMaterials||[]).map(z=>({material_id:z.id,name:z.name||"مادة",unit:z.unit||"قطعة",
+ amount:N(z.amount),unit_cost:N(z.unitCost),width:z.widthCm?N(z.widthCm):undefined,length:z.heightCm?N(z.heightCm):undefined,
+ count:N(z.pieceCount||1),cost:round(N(z.amount)*N(z.unitCost))}));
+ if(N(x.electricCost)>0)lines.push({name:"كهرباء الليزر",cost:N(x.electricCost),laser_minutes:N(x.laserMinutes)});
+ let cost=N(x.materialCost)+N(x.electricCost);
+ let order={id:rec.record_id,owner_id:user.id,customer_snapshot:{name:x.customer||"زبون تجربة",legacy_id:rec.record_id},
+ product_snapshot:{name:x.product||"منتج تجربة",legacy_id:rec.record_id},status:statusMap[x.status]||"new",price:N(x.price),
+ estimated_cost:cost||round(lines.reduce((s,z)=>s+N(z.cost),0)),cost_breakdown:lines,
+ inventory_confirmed:!!x.inventoryDeducted,inventory_confirmed_at:x.inventoryDeducted?new Date().toISOString():null,
+ notes:(x.notes||"")+" [مستورد من النسخة التجريبية]",
+ delivery_due:x.dueDate?new Date(x.dueDate).toISOString():null};
+ const w=await SB.from("lp_orders").upsert(order,{onConflict:"id",ignoreDuplicates:true});
+ if(w.error)throw w.error;changed=true;
+}
+if(changed)notify("استرجعنا مواد وطلبات نسخة Flutter التجريبية بدون حذف أصلها");
+return changed;
+}
 async function save(table,obj,existingId){const data=Object.assign({},obj,{owner_id:user.id,updated_at:new Date().toISOString()});if(existingId){const {error}=await SB.from(TABLES[table]).update(data).eq("id",existingId);if(error)throw error;return existingId}else{const {data:r,error}=await SB.from(TABLES[table]).insert(data).select("id").single();if(error)throw error;return r.id}}
 async function addRow(table,obj){const {data:r,error}=await SB.from(TABLES[table]).insert(Object.assign({},obj,{owner_id:user.id})).select().single();if(error)throw error;return r}
 function paid(id){return list("payments").filter(p=>p.order_id===id).reduce((s,p)=>s+N(p.amount),0)}
