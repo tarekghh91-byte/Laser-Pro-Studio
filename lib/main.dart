@@ -1,10 +1,20 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:async';
+import 'package:uuid/uuid.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'cloud_config.dart';
+import 'cloud_auth.dart';
+import 'cloud_sync.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
-void main() {
+Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await Supabase.initialize(
+    url: studioSupabaseUrl,
+    anonKey: studioSupabasePublishableKey,
+  );
   runApp(const LaserProApp());
 }
 
@@ -121,50 +131,161 @@ class Material {
 }
 
 class StudioStore extends ChangeNotifier {
+  StudioStore({required this.ownerId}) : _cloud = CloudSync(ownerId);
+  final String ownerId;
+  final CloudSync _cloud;
   final List<Order> orders = [];
   final List<Material> materials = [];
+  final Set<String> _pendingOrders = {};
+  final Set<String> _pendingMaterials = {};
+  final Map<String, int> _orderVersions = {};
+  final Map<String, int> _materialVersions = {};
+  Timer? _syncTimer;
   bool loading = true;
+  bool syncing = false;
+  bool _disposed = false;
   String? error;
+  String syncStatus = 'بانتظار المزامنة';
   File? _file;
+  Future<void> _writeChain = Future<void>.value();
+
+  bool get hasPendingWrites => _pendingOrders.isNotEmpty || _pendingMaterials.isNotEmpty;
+  void _notify() { if (!_disposed) notifyListeners(); }
+
   Future<void> load() async {
     try {
       final folder = await getApplicationSupportDirectory();
-      _file = File('${folder.path}${Platform.pathSeparator}laser_pro_data.json');
+      // Intentionally separate from the old unsynced local test data.
+      _file = File('${folder.path}${Platform.pathSeparator}laser_pro_cloud_$ownerId.json');
       if (await _file!.exists()) {
-        final j = jsonDecode(await _file!.readAsString()) as Map<String, dynamic>;
-        orders.addAll((j['orders'] as List<dynamic>? ?? []).map(
-          (e) => Order.fromJson(e as Map<String, dynamic>)));
-        materials.addAll((j['materials'] as List<dynamic>? ?? []).map(
-          (e) => Material.fromJson(e as Map<String, dynamic>)));
+        final raw = jsonDecode(await _file!.readAsString()) as Map<String, dynamic>;
+        orders.addAll((raw['orders'] as List<dynamic>? ?? []).map(
+          (e) => Order.fromJson(Map<String, dynamic>.from(e as Map))));
+        materials.addAll((raw['materials'] as List<dynamic>? ?? []).map(
+          (e) => Material.fromJson(Map<String, dynamic>.from(e as Map))));
+        _pendingOrders.addAll(List<String>.from(raw['pendingOrders'] as List? ?? []));
+        _pendingMaterials.addAll(List<String>.from(raw['pendingMaterials'] as List? ?? []));
+        for (final entry in (raw['orderVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _orderVersions[entry.key] = (entry.value as num).toInt();
+        }
+        for (final entry in (raw['materialVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _materialVersions[entry.key] = (entry.value as num).toInt();
+        }
       }
     } catch (e) {
-      error = 'تعذّر قراءة البيانات المحلية: $e';
+      error = 'تعذّر قراءة البيانات المحلية الخاصة بالحساب: $e';
     } finally {
       loading = false;
-      notifyListeners();
+      _notify();
+    }
+    if (error == null) {
+      _syncTimer = Timer.periodic(const Duration(seconds: 25), (_) => unawaited(syncNow()));
+      unawaited(syncNow());
     }
   }
-  Future<void> _save() async {
-    if (_file == null) throw StateError('التخزين المحلي غير متاح');
-    final temp = File('${_file!.path}.tmp');
+
+  Future<void> _saveLocal() {
     final content = jsonEncode({
-      'schemaVersion': 2,
+      'schemaVersion': 3,
       'orders': orders.map((e) => e.toJson()).toList(),
       'materials': materials.map((e) => e.toJson()).toList(),
+      'pendingOrders': _pendingOrders.toList(),
+      'pendingMaterials': _pendingMaterials.toList(),
+      'orderVersions': _orderVersions,
+      'materialVersions': _materialVersions,
     });
-    await temp.writeAsString(content, flush: true);
-    if (await _file!.exists()) {
-      final backup = File('${_file!.path}.bak');
-      await _file!.copy(backup.path);
-      await _file!.delete();
-    }
-    await temp.rename(_file!.path);
-    notifyListeners();
+    final next = _writeChain.then((_) async {
+      if (_file == null) throw StateError('التخزين المحلي غير متاح');
+      final temp = File('${_file!.path}.tmp');
+      await temp.writeAsString(content, flush: true);
+      if (await _file!.exists()) {
+        await _file!.copy('${_file!.path}.bak');
+        await _file!.delete();
+      }
+      await temp.rename(_file!.path);
+    });
+    _writeChain = next.catchError((Object _) {});
+    return next;
   }
-  Future<void> addOrder(Order order) async { orders.add(order); await _save(); }
-  Future<void> updateOrder() async => _save();
-  Future<void> addMaterial(Material material) async { materials.add(material); await _save(); }
-  Future<void> updateMaterial() async => _save();
+
+  Future<void> _save({String? orderId, String? materialId, Iterable<String> otherMaterials = const []}) async {
+    if (orderId != null) _pendingOrders.add(orderId);
+    if (materialId != null) _pendingMaterials.add(materialId);
+    _pendingMaterials.addAll(otherMaterials);
+    await _saveLocal();
+    _notify();
+    unawaited(syncNow());
+  }
+
+  Future<void> addOrder(Order o) async { orders.add(o); await _save(orderId: o.id); }
+  Future<void> updateOrder(Order o) async => _save(orderId: o.id);
+  Future<void> addMaterial(Material m) async { materials.add(m); await _save(materialId: m.id); }
+  Future<void> updateMaterial(Material m) async => _save(materialId: m.id);
+
+  /// Push locally edited records, then pull changes from the other device.
+  /// Optimistic versions prevent the same item being silently overwritten.
+  Future<void> syncNow() async {
+    if (syncing || loading || _disposed || error != null) return;
+    syncing = true;
+    syncStatus = 'جارٍ المزامنة...';
+    _notify();
+    var conflict = false;
+    try {
+      for (final id in _pendingMaterials.toList()) {
+        final matches = materials.where((m) => m.id == id);
+        if (matches.isEmpty) continue;
+        final material = matches.first;
+        final payload = material.toJson();
+        try {
+          final version = await _cloud.put('materials', id, payload, _materialVersions[id] ?? 0);
+          _materialVersions[id] = version;
+          if (jsonEncode(material.toJson()) == jsonEncode(payload)) _pendingMaterials.remove(id);
+        } catch (e) {
+          if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; }
+          rethrow;
+        }
+      }
+      for (final id in _pendingOrders.toList()) {
+        final matches = orders.where((o) => o.id == id);
+        if (matches.isEmpty) continue;
+        final order = matches.first;
+        final payload = order.toJson();
+        try {
+          final version = await _cloud.put('orders', id, payload, _orderVersions[id] ?? 0);
+          _orderVersions[id] = version;
+          if (jsonEncode(order.toJson()) == jsonEncode(payload)) _pendingOrders.remove(id);
+        } catch (e) {
+          if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; }
+          rethrow;
+        }
+      }
+      final remoteMaterials = await _cloud.list('materials');
+      for (final r in remoteMaterials) {
+        if (_pendingMaterials.contains(r.id)) continue;
+        final idx = materials.indexWhere((m) => m.id == r.id);
+        final item = Material.fromJson(r.payload);
+        if (idx == -1) { materials.add(item); } else { materials[idx] = item; }
+        _materialVersions[r.id] = r.version;
+      }
+      final remoteOrders = await _cloud.list('orders');
+      for (final r in remoteOrders) {
+        if (_pendingOrders.contains(r.id)) continue;
+        final idx = orders.indexWhere((o) => o.id == r.id);
+        final item = Order.fromJson(r.payload);
+        if (idx == -1) { orders.add(item); } else { orders[idx] = item; }
+        _orderVersions[r.id] = r.version;
+      }
+      await _saveLocal();
+      syncStatus = conflict ? 'تعارض تعديل: تأكّد من البيانات قبل المتابعة'
+        : hasPendingWrites ? 'بانتظار إرسال تغييرات محلية' : 'متزامن مع الحساب';
+    } catch (_) {
+      syncStatus = 'غير متصل — تغييراتك محفوظة محلياً';
+    } finally {
+      syncing = false;
+      _notify();
+    }
+  }
+
   Future<String?> confirmMaterialUsage(Order o) async {
     if (o.inventoryDeducted) return 'المواد مخصومة مسبقاً';
     if (o.usedMaterials.isEmpty) return 'ما في مواد مسجّلة';
@@ -175,16 +296,14 @@ class StudioStore extends ChangeNotifier {
     for (final entry in needed.entries) {
       final found = materials.where((m) => m.id == entry.key);
       if (found.isEmpty) return 'في مادة مش موجودة بالمخزون';
-      if (found.first.quantity + 1e-8 < entry.value) {
-        return 'ما في كمية كافية من ${found.first.name}';
-      }
+      if (found.first.quantity + 1e-8 < entry.value) return 'ما في كمية كافية من ${found.first.name}';
     }
     for (final entry in needed.entries) {
       materials.firstWhere((m) => m.id == entry.key).quantity -= entry.value;
     }
     o.inventoryDeducted = true;
     try {
-      await _save();
+      await _save(orderId: o.id, otherMaterials: needed.keys);
     } catch (_) {
       for (final entry in needed.entries) {
         materials.firstWhere((m) => m.id == entry.key).quantity += entry.value;
@@ -194,17 +313,57 @@ class StudioStore extends ChangeNotifier {
     }
     return null;
   }
+
+  @override
+  void dispose() {
+    _syncTimer?.cancel();
+    _disposed = true;
+    super.dispose();
+  }
 }
 
 class LaserProApp extends StatefulWidget {
   const LaserProApp({super.key});
   @override State<LaserProApp> createState() => _LaserProAppState();
 }
-class _LaserProAppState extends State<LaserProApp> {
-  final store = StudioStore();
-  @override void initState() { super.initState(); store.load(); }
-  @override void dispose() { store.dispose(); super.dispose(); }
-  @override Widget build(BuildContext context) => MaterialApp(
+class _LaserProAppState extends State<LaserProApp> with WidgetsBindingObserver {
+  String? _uid;
+  StudioStore? store;
+  StreamSubscription<AuthState>? _authSubscription;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _uid = Supabase.instance.client.auth.currentUser?.id;
+    if (_uid != null) store = StudioStore(ownerId: _uid!)..load();
+    _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
+      final next = state.session?.user.id;
+      if (_uid == next || !mounted) return;
+      store?.dispose();
+      setState(() {
+        _uid = next;
+        store = next == null ? null : StudioStore(ownerId: next);
+      });
+      if (store != null) unawaited(store!.load());
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) unawaited(store?.syncNow() ?? Future<void>.value());
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _authSubscription?.cancel();
+    store?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
     debugShowCheckedModeBanner: false,
     title: 'Laser Pro Studio',
     theme: ThemeData(useMaterial3: true, brightness: Brightness.dark,
@@ -213,9 +372,10 @@ class _LaserProAppState extends State<LaserProApp> {
         borderRadius: BorderRadius.circular(16))),
       inputDecorationTheme: InputDecorationTheme(border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12)))),
-    home: Directionality(textDirection: TextDirection.rtl,
-      child: AnimatedBuilder(animation: store,
-        builder: (_, __) => StudioShell(store: store))),
+    home: store == null ? const CloudAuthScreen()
+      : Directionality(textDirection: TextDirection.rtl,
+        child: AnimatedBuilder(animation: store!,
+          builder: (_, __) => StudioShell(store: store!))),
   );
 }
 
@@ -240,11 +400,19 @@ class _StudioShellState extends State<StudioShell> {
       InventoryPage(store: store), AccountsPage(store: store)];
     return Scaffold(
       appBar: AppBar(backgroundColor: ink,
-        title: const Text('LASER PRO  /  STUDIO', style: TextStyle(
-          fontWeight: FontWeight.w800, letterSpacing: 1, color: gold)),
-        actions: [Padding(padding: const EdgeInsets.symmetric(horizontal: 12),
-          child: Center(child: Text('محفوظ محلياً • بلا مزامنة',
-            style: TextStyle(fontSize: 11, color: Colors.white.withValues(alpha: .65)))))],
+        title: Text(isWide ? 'LASER PRO / STUDIO' : 'LASER PRO', overflow: TextOverflow.ellipsis,
+          style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 17, color: gold)),
+        actions: [
+          IconButton(icon: Icon(store.syncStatus == 'متزامن مع الحساب'
+            ? Icons.cloud_done_outlined : Icons.cloud_sync_outlined),
+            tooltip: store.syncStatus, onPressed: () async {
+              await store.syncNow();
+              if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(content: Text(store.syncStatus)));
+            }),
+          IconButton(icon: const Icon(Icons.logout, size: 20), tooltip: 'تسجيل خروج',
+            onPressed: () async => Supabase.instance.client.auth.signOut()),
+        ],
       ),
       body: Row(children: [
         if (isWide) NavigationRail(
@@ -375,7 +543,7 @@ class OrderTile extends StatelessWidget {
               decoration: const InputDecoration(labelText: 'حالة الطلب'),
               items: ['جديد', 'قيد التنفيذ', 'جاهز', 'تم التسليم']
                 .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) async { if (v != null) { order.status = v; await store.updateOrder(); } }),
+              onChanged: (v) async { if (v != null) { order.status = v; await store.updateOrder(order); } }),
             const SizedBox(height: 10),
             FilledButton(onPressed: () async {
               final controller = TextEditingController(text: order.paid.toStringAsFixed(2));
@@ -385,7 +553,7 @@ class OrderTile extends StatelessWidget {
                   actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
                     FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('حفظ'))]));
               final n = double.tryParse(result ?? '');
-              if (n != null && n >= 0 && n <= order.price) { order.paid = n; await store.updateOrder(); }
+              if (n != null && n >= 0 && n <= order.price) { order.paid = n; await store.updateOrder(order); }
             }, child: const Text('تحديث المقبوض')),
           ]))), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق'))])))));
 }
@@ -547,7 +715,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store) async {
                 return;
               }
               try {
-                await store.addOrder(Order(id: DateTime.now().microsecondsSinceEpoch.toString(),
+                await store.addOrder(Order(id: const Uuid().v4(),
                   customer: customer.text.trim(), product: product.text.trim(),
                   dueDate: due, price: p, paid: a, materialCost: materialCost,
                   usedMaterials: List.of(used), laserMinutes: duration,
@@ -602,7 +770,7 @@ class InventoryPage extends StatelessWidget {
         if (value != null) {
           m.quantity = value[0];
           m.unitCost = value[1] / m.packUnits;
-          await store.updateMaterial();
+          await store.updateMaterial(m);
         }
         input.dispose(); price.dispose();
       }))),
@@ -665,7 +833,7 @@ class InventoryPage extends StatelessWidget {
             return;
           }
           try {
-            await store.addMaterial(Material(id: DateTime.now().microsecondsSinceEpoch.toString(),
+            await store.addMaterial(Material(id: const Uuid().v4(),
               name: name.text.trim(), quantity: packs * count, unit: unit, category: category,
               reorderLevel: l, unitCost: c / count, packUnits: count));
             if (ctx.mounted) Navigator.pop(ctx);
