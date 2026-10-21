@@ -6,6 +6,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'cloud_config.dart';
 import 'cloud_auth.dart';
 import 'cloud_sync.dart';
+import 'wood_boards.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -131,15 +132,17 @@ double laserElectricity(double minutes) =>
 class UsedMaterial {
   UsedMaterial({required this.id, required this.name, required this.unit,
     required this.category, required this.amount, required this.unitCost,
-    this.widthCm, this.heightCm});
+    this.widthCm, this.heightCm, this.pieceCount = 1});
   final String id, name, unit, category;
   final double amount, unitCost;
   final double? widthCm, heightCm;
+  final int pieceCount;
+  bool get isWoodBoardCut => widthCm != null && heightCm != null && pieceCount > 0;
   double get cost => amount * unitCost;
   Map<String, dynamic> toJson() => {
     'id': id, 'name': name, 'unit': unit, 'category': category,
     'amount': amount, 'unitCost': unitCost,
-    'widthCm': widthCm, 'heightCm': heightCm,
+    'widthCm': widthCm, 'heightCm': heightCm, 'pieceCount': pieceCount,
   };
   factory UsedMaterial.fromJson(Map<String, dynamic> j) => UsedMaterial(
     id: j['id'] as String? ?? '', name: j['name'] as String? ?? '',
@@ -149,6 +152,7 @@ class UsedMaterial {
     unitCost: (j['unitCost'] as num? ?? 0).toDouble(),
     widthCm: (j['widthCm'] as num?)?.toDouble(),
     heightCm: (j['heightCm'] as num?)?.toDouble(),
+    pieceCount: (j['pieceCount'] as num? ?? 1).toInt(),
   );
 }
 
@@ -206,7 +210,7 @@ class Order {
 class Material {
   Material({required this.id, required this.name, required this.quantity,
     required this.unit, required this.reorderLevel, required this.unitCost,
-    this.category = 'مواد', this.packUnits = 1});
+    this.category = 'مواد', this.packUnits = 1, this.boardInventory});
   final String id;
   String name;
   double quantity;
@@ -215,10 +219,13 @@ class Material {
   double unitCost;
   String category;
   double packUnits;
+  WoodBoardStock? boardInventory;
+  bool get isBoardStock => boardInventory != null;
   Map<String, dynamic> toJson() => {
     'id': id, 'name': name, 'quantity': quantity, 'unit': unit,
     'reorderLevel': reorderLevel, 'unitCost': unitCost, 'category': category,
     'packUnits': packUnits,
+    'boardInventory': boardInventory?.toJson(),
   };
   factory Material.fromJson(Map<String, dynamic> j) => Material(
     id: j['id'] as String, name: j['name'] as String,
@@ -227,6 +234,8 @@ class Material {
     unitCost: (j['unitCost'] as num).toDouble(),
     category: j['category'] as String? ?? 'مواد',
     packUnits: (j['packUnits'] as num? ?? 1).toDouble(),
+    boardInventory: j['boardInventory'] is Map
+      ? WoodBoardStock.fromJson(Map<String,dynamic>.from(j['boardInventory'] as Map)) : null,
   );
 }
 
@@ -387,28 +396,65 @@ class StudioStore extends ChangeNotifier {
   }
 
   Future<String?> confirmMaterialUsage(Order o) async {
-    if (o.inventoryDeducted) return 'المواد مخصومة مسبقاً';
+    if (o.inventoryDeducted) return 'المواد انخصمت مسبقاً';
     if (o.usedMaterials.isEmpty) return 'ما في مواد مسجّلة';
-    final needed = <String, double>{};
+
+    // Validate ALL materials and cuts before changing anything. Physical
+    // board remnants are never treated as one combined virtual area.
+    final normalNeeded = <String,double>{};
+    final boardNeeded = <String,List<WoodCutRequest>>{};
     for (final line in o.usedMaterials) {
-      needed[line.id] = (needed[line.id] ?? 0) + line.amount;
-    }
-    for (final entry in needed.entries) {
-      final found = materials.where((m) => m.id == entry.key);
-      if (found.isEmpty) return 'في مادة مش موجودة بالمخزون';
-      if (found.first.quantity + 1e-8 < entry.value) return 'ما في كمية كافية من ${found.first.name}';
-    }
-    for (final entry in needed.entries) {
-      materials.firstWhere((m) => m.id == entry.key).quantity -= entry.value;
-    }
-    o.inventoryDeducted = true;
-    try {
-      await _save(orderId: o.id, otherMaterials: needed.keys);
-    } catch (_) {
-      for (final entry in needed.entries) {
-        materials.firstWhere((m) => m.id == entry.key).quantity += entry.value;
+      final matched=materials.where((m)=>m.id==line.id);
+      if(matched.isEmpty) return 'في مادة مش موجودة بالمخزون';
+      final m=matched.first;
+      if(m.boardInventory != null) {
+        if(!line.isWoodBoardCut) return 'الخشب ${m.name} لازم تدخل قياسات كل قطعة قبل خصمها';
+        boardNeeded.putIfAbsent(m.id,()=>[]).add(
+          WoodCutRequest(widthCm:line.widthCm!,heightCm:line.heightCm!,count:line.pieceCount));
+      } else {
+        normalNeeded[m.id]=(normalNeeded[m.id]??0)+line.amount;
       }
-      o.inventoryDeducted = false;
+    }
+    for (final entry in normalNeeded.entries) {
+      final m=materials.firstWhere((v)=>v.id==entry.key);
+      if(!entry.value.isFinite || entry.value<=0 || m.quantity+1e-8<entry.value) {
+        return 'ما في كمية كافية من ${m.name}';
+      }
+    }
+    final newLayouts=<String,WoodBoardStock>{};
+    for (final entry in boardNeeded.entries) {
+      final m=materials.firstWhere((v)=>v.id==entry.key);
+      final result=m.boardInventory!.tryAllocate(entry.value);
+      if(!result.successful) return '${m.name}: ${result.message}';
+      newLayouts[entry.key]=result.stock!;
+    }
+
+    // Keep copies for local-write failure rollback. Sync conflicts require
+    // explicit human review: do not silently consume the same board twice.
+    final priorLayouts=<String,WoodBoardStock>{};
+    for (final entry in newLayouts.entries) {
+      final m=materials.firstWhere((v)=>v.id==entry.key);
+      priorLayouts[m.id]=m.boardInventory!.copy();
+      m.boardInventory=entry.value;
+      m.quantity=entry.value.physicalSheets.toDouble();
+    }
+    for (final entry in normalNeeded.entries) {
+      materials.firstWhere((m)=>m.id==entry.key).quantity-=entry.value;
+    }
+    o.inventoryDeducted=true;
+    try {
+      await _save(orderId:o.id,
+        otherMaterials:[...normalNeeded.keys,...newLayouts.keys]);
+    } catch (_) {
+      for (final entry in priorLayouts.entries) {
+        final m=materials.firstWhere((m)=>m.id==entry.key);
+        m.boardInventory=entry.value;
+        m.quantity=entry.value.physicalSheets.toDouble();
+      }
+      for (final entry in normalNeeded.entries) {
+        materials.firstWhere((m)=>m.id==entry.key).quantity+=entry.value;
+      }
+      o.inventoryDeducted=false;
       rethrow;
     }
     return null;
