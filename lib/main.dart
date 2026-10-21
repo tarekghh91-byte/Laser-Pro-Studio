@@ -13,7 +13,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
     url: studioSupabaseUrl,
-    anonKey: studioSupabasePublishableKey,
+    publishableKey: studioSupabasePublishableKey,
   );
   runApp(const LaserProApp());
 }
