@@ -6,16 +6,117 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'cloud_config.dart';
 import 'cloud_auth.dart';
 import 'cloud_sync.dart';
+import 'wood_boards.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: studioSupabaseUrl,
-    anonKey: studioSupabasePublishableKey,
+  // Always paint a Flutter frame before initializing cloud plugins.
+  // Initialization failures must appear as an actionable screen instead of
+  // leaving Android frozen forever on its native Flutter splash screen.
+  runApp(const LaserProBootstrap());
+}
+
+class LaserProBootstrap extends StatefulWidget {
+  const LaserProBootstrap({super.key, this.initializeForTest});
+  // Dependency injection is used only by widget tests.
+  final Future<void> Function()? initializeForTest;
+
+  @override
+  State<LaserProBootstrap> createState() => _LaserProBootstrapState();
+}
+
+class _LaserProBootstrapState extends State<LaserProBootstrap> {
+  late Future<void> _initialization;
+
+  @override
+  void initState() {
+    super.initState();
+    _beginInitialization();
+  }
+
+  void _beginInitialization() {
+    _initialization = (widget.initializeForTest == null
+      ? Supabase.initialize(
+          url: studioSupabaseUrl,
+          publishableKey: studioSupabasePublishableKey,
+        ).then((_) {})
+      : widget.initializeForTest!())
+        .timeout(const Duration(seconds: 20),
+          onTimeout: () => throw TimeoutException('Supabase startup took too long'));
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Laser Pro Studio',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: const Color(0xFF17191F),
+      colorSchemeSeed: const Color(0xFFDAAF69),
+    ),
+    home: FutureBuilder<void>(
+      future: _initialization,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: SafeArea(child: Center(child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('LASER PRO STUDIO', style: TextStyle(
+                    fontSize: 23, fontWeight: FontWeight.bold, color: Color(0xFFDAAF69))),
+                  SizedBox(height: 28),
+                  CircularProgressIndicator(),
+                  SizedBox(height: 18),
+                  Text('عم نجهّز اتصال التطبيق...'),
+                ],
+              ))),
+            ),
+          );
+        }
+        if (snapshot.hasError) {
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: SafeArea(child: Center(child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, size: 56, color: Color(0xFFDAAF69)),
+                      const SizedBox(height: 16),
+                      const Text('تعذّر تشغيل اتصال البرنامج',
+                        style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      const Text('ما في داعي تحذف التطبيق أو حسابك. تَأكّد من الإنترنت وجرّب مرة تانية.',
+                        textAlign: TextAlign.center),
+                      const SizedBox(height: 8),
+                      SelectableText('${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: () => setState(_beginInitialization),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('إعادة المحاولة'),
+                      ),
+                    ],
+                  ),
+                ),
+              ))),
+            ),
+          );
+        }
+        return const LaserProApp();
+      },
+    ),
   );
-  runApp(const LaserProApp());
 }
 
 const ink = Color(0xFF17191F);
@@ -31,15 +132,17 @@ double laserElectricity(double minutes) =>
 class UsedMaterial {
   UsedMaterial({required this.id, required this.name, required this.unit,
     required this.category, required this.amount, required this.unitCost,
-    this.widthCm, this.heightCm});
+    this.widthCm, this.heightCm, this.pieceCount = 1});
   final String id, name, unit, category;
   final double amount, unitCost;
   final double? widthCm, heightCm;
+  final int pieceCount;
+  bool get isWoodBoardCut => widthCm != null && heightCm != null && pieceCount > 0;
   double get cost => amount * unitCost;
   Map<String, dynamic> toJson() => {
     'id': id, 'name': name, 'unit': unit, 'category': category,
     'amount': amount, 'unitCost': unitCost,
-    'widthCm': widthCm, 'heightCm': heightCm,
+    'widthCm': widthCm, 'heightCm': heightCm, 'pieceCount': pieceCount,
   };
   factory UsedMaterial.fromJson(Map<String, dynamic> j) => UsedMaterial(
     id: j['id'] as String? ?? '', name: j['name'] as String? ?? '',
@@ -49,6 +152,7 @@ class UsedMaterial {
     unitCost: (j['unitCost'] as num? ?? 0).toDouble(),
     widthCm: (j['widthCm'] as num?)?.toDouble(),
     heightCm: (j['heightCm'] as num?)?.toDouble(),
+    pieceCount: (j['pieceCount'] as num? ?? 1).toInt(),
   );
 }
 
@@ -106,7 +210,7 @@ class Order {
 class Material {
   Material({required this.id, required this.name, required this.quantity,
     required this.unit, required this.reorderLevel, required this.unitCost,
-    this.category = 'مواد', this.packUnits = 1});
+    this.category = 'مواد', this.packUnits = 1, this.boardInventory});
   final String id;
   String name;
   double quantity;
@@ -115,10 +219,13 @@ class Material {
   double unitCost;
   String category;
   double packUnits;
+  WoodBoardStock? boardInventory;
+  bool get isBoardStock => boardInventory != null;
   Map<String, dynamic> toJson() => {
     'id': id, 'name': name, 'quantity': quantity, 'unit': unit,
     'reorderLevel': reorderLevel, 'unitCost': unitCost, 'category': category,
     'packUnits': packUnits,
+    'boardInventory': boardInventory?.toJson(),
   };
   factory Material.fromJson(Map<String, dynamic> j) => Material(
     id: j['id'] as String, name: j['name'] as String,
@@ -127,6 +234,8 @@ class Material {
     unitCost: (j['unitCost'] as num).toDouble(),
     category: j['category'] as String? ?? 'مواد',
     packUnits: (j['packUnits'] as num? ?? 1).toDouble(),
+    boardInventory: j['boardInventory'] is Map
+      ? WoodBoardStock.fromJson(Map<String,dynamic>.from(j['boardInventory'] as Map)) : null,
   );
 }
 
@@ -287,28 +396,65 @@ class StudioStore extends ChangeNotifier {
   }
 
   Future<String?> confirmMaterialUsage(Order o) async {
-    if (o.inventoryDeducted) return 'المواد مخصومة مسبقاً';
+    if (o.inventoryDeducted) return 'المواد انخصمت مسبقاً';
     if (o.usedMaterials.isEmpty) return 'ما في مواد مسجّلة';
-    final needed = <String, double>{};
+
+    // Validate ALL materials and cuts before changing anything. Physical
+    // board remnants are never treated as one combined virtual area.
+    final normalNeeded = <String,double>{};
+    final boardNeeded = <String,List<WoodCutRequest>>{};
     for (final line in o.usedMaterials) {
-      needed[line.id] = (needed[line.id] ?? 0) + line.amount;
-    }
-    for (final entry in needed.entries) {
-      final found = materials.where((m) => m.id == entry.key);
-      if (found.isEmpty) return 'في مادة مش موجودة بالمخزون';
-      if (found.first.quantity + 1e-8 < entry.value) return 'ما في كمية كافية من ${found.first.name}';
-    }
-    for (final entry in needed.entries) {
-      materials.firstWhere((m) => m.id == entry.key).quantity -= entry.value;
-    }
-    o.inventoryDeducted = true;
-    try {
-      await _save(orderId: o.id, otherMaterials: needed.keys);
-    } catch (_) {
-      for (final entry in needed.entries) {
-        materials.firstWhere((m) => m.id == entry.key).quantity += entry.value;
+      final matched=materials.where((m)=>m.id==line.id);
+      if(matched.isEmpty) return 'في مادة مش موجودة بالمخزون';
+      final m=matched.first;
+      if(m.boardInventory != null) {
+        if(!line.isWoodBoardCut) return 'الخشب ${m.name} لازم تدخل قياسات كل قطعة قبل خصمها';
+        boardNeeded.putIfAbsent(m.id,()=>[]).add(
+          WoodCutRequest(widthCm:line.widthCm!,heightCm:line.heightCm!,count:line.pieceCount));
+      } else {
+        normalNeeded[m.id]=(normalNeeded[m.id]??0)+line.amount;
       }
-      o.inventoryDeducted = false;
+    }
+    for (final entry in normalNeeded.entries) {
+      final m=materials.firstWhere((v)=>v.id==entry.key);
+      if(!entry.value.isFinite || entry.value<=0 || m.quantity+1e-8<entry.value) {
+        return 'ما في كمية كافية من ${m.name}';
+      }
+    }
+    final newLayouts=<String,WoodBoardStock>{};
+    for (final entry in boardNeeded.entries) {
+      final m=materials.firstWhere((v)=>v.id==entry.key);
+      final result=m.boardInventory!.tryAllocate(entry.value);
+      if(!result.successful) return '${m.name}: ${result.message}';
+      newLayouts[entry.key]=result.stock!;
+    }
+
+    // Keep copies for local-write failure rollback. Sync conflicts require
+    // explicit human review: do not silently consume the same board twice.
+    final priorLayouts=<String,WoodBoardStock>{};
+    for (final entry in newLayouts.entries) {
+      final m=materials.firstWhere((v)=>v.id==entry.key);
+      priorLayouts[m.id]=m.boardInventory!.copy();
+      m.boardInventory=entry.value;
+      m.quantity=entry.value.physicalSheets.toDouble();
+    }
+    for (final entry in normalNeeded.entries) {
+      materials.firstWhere((m)=>m.id==entry.key).quantity-=entry.value;
+    }
+    o.inventoryDeducted=true;
+    try {
+      await _save(orderId:o.id,
+        otherMaterials:[...normalNeeded.keys,...newLayouts.keys]);
+    } catch (_) {
+      for (final entry in priorLayouts.entries) {
+        final m=materials.firstWhere((m)=>m.id==entry.key);
+        m.boardInventory=entry.value;
+        m.quantity=entry.value.physicalSheets.toDouble();
+      }
+      for (final entry in normalNeeded.entries) {
+        materials.firstWhere((m)=>m.id==entry.key).quantity+=entry.value;
+      }
+      o.inventoryDeducted=false;
       rethrow;
     }
     return null;
@@ -340,11 +486,14 @@ class _LaserProAppState extends State<LaserProApp> with WidgetsBindingObserver {
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
       final next = state.session?.user.id;
       if (_uid == next || !mounted) return;
-      store?.dispose();
+      final previousStore = store;
       setState(() {
         _uid = next;
         store = next == null ? null : StudioStore(ownerId: next);
       });
+      // Dispose after old AnimatedBuilder leaves the tree, not while it
+      // still has dependents; this avoids route/widget teardown assertions.
+      WidgetsBinding.instance.addPostFrameCallback((_) => previousStore?.dispose());
       if (store != null) unawaited(store!.load());
     });
   }
@@ -514,7 +663,10 @@ class OrderTile extends StatelessWidget {
             const Divider(),
             const Text('تفاصيل تكلفة الطلب', style: TextStyle(fontWeight: FontWeight.bold)),
             for (final line in order.usedMaterials)
-              costLine('${line.name} (${line.amount.toStringAsFixed(2)} ${line.unit})', line.cost),
+              costLine(line.isWoodBoardCut
+                ? '${line.name} — ${line.widthCm!.toStringAsFixed(1)} × ${line.heightCm!.toStringAsFixed(1)} سم × ${line.pieceCount} قطع'
+                : '${line.name} (${line.amount.toStringAsFixed(2)} ${line.unit})',
+                line.cost),
             if (order.usedMaterials.isEmpty)
               const Text('هيدا طلب قديم، تكلفته المسجّلة محفوظة.'),
             costLine('المواد والتغليف', order.materialCost),
@@ -559,71 +711,160 @@ class OrderTile extends StatelessWidget {
 }
 
 // The user enters only quantities/measurements, never a guessed dollar cost.
+
 Future<UsedMaterial?> chooseUsedMaterial(BuildContext context, StudioStore store) async {
   if (store.materials.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('ضيف المواد وأسعارها بالمخزون أولاً')));
     return null;
   }
-  var chosenId = store.materials.first.id;
-  final amount = TextEditingController();
-  final width = TextEditingController();
-  final height = TextEditingController();
-  final chosen = await showDialog<UsedMaterial>(context: context,
-    builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
-      final material = store.materials.firstWhere((m) => m.id == chosenId);
-      final area = material.unit == 'سم²';
-      final q = area
-          ? (double.tryParse(width.text) ?? 0) * (double.tryParse(height.text) ?? 0)
-          : double.tryParse(amount.text) ?? 0;
-      return Directionality(textDirection: TextDirection.rtl,
-        child: AlertDialog(title: const Text('شو استعملت من المواد؟'),
-          content: SizedBox(width: 420, child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              DropdownButtonFormField<String>(value: chosenId, isExpanded: true,
-                decoration: const InputDecoration(labelText: 'اختر المادة من المخزون'),
-                items: store.materials.map((m) => DropdownMenuItem(
-                  value: m.id, child: Text('${m.name} — ${m.unit}', overflow: TextOverflow.ellipsis))).toList(),
-                onChanged: (v) { if (v != null) refresh(() {
-                  chosenId = v; amount.clear(); width.clear(); height.clear();
-                }); }),
-              const SizedBox(height: 10),
-              if (area) ...[
-                TextField(controller: width, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'طول الخشب المستخدم (سم)'),
-                  onChanged: (_) => refresh(() {})),
-                const SizedBox(height: 10),
-                TextField(controller: height, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'عرض الخشب المستخدم (سم)'),
-                  onChanged: (_) => refresh(() {})),
-              ] else TextField(controller: amount,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(labelText: 'الكمية المستخدمة (${material.unit})'),
-                onChanged: (_) => refresh(() {})),
-              const SizedBox(height: 14),
+  return showDialog<UsedMaterial>(
+    context: context,
+    builder: (_) => CutMaterialDialog(materials: store.materials),
+  );
+}
+
+class CutMaterialDialog extends StatefulWidget {
+  const CutMaterialDialog({super.key,required this.materials});
+  final List<Material> materials;
+  @override State<CutMaterialDialog> createState()=>_CutMaterialDialogState();
+}
+
+class _CutMaterialDialogState extends State<CutMaterialDialog> {
+  late String chosenId;
+  final _amount=TextEditingController();
+  final _width=TextEditingController();
+  final _height=TextEditingController();
+  final _pieceCount=TextEditingController(text:'1');
+
+  @override void initState() {
+    super.initState();
+    chosenId=widget.materials.first.id;
+  }
+  @override void dispose() {
+    _amount.dispose();_width.dispose();_height.dispose();_pieceCount.dispose();
+    super.dispose();
+  }
+  void _submit() {
+    final material=widget.materials.firstWhere((m)=>m.id==chosenId);
+    if(material.boardInventory != null) {
+      final width=double.tryParse(_width.text.trim())??0;
+      final height=double.tryParse(_height.text.trim())??0;
+      final count=int.tryParse(_pieceCount.text.trim())??0;
+      if(!width.isFinite || !height.isFinite || width<=0 || height<=0 || count<1 || count>1000) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:Text('أدخل طول وعرض وعدد القطع بشكل صحيح')));
+        return;
+      }
+      final stock=material.boardInventory!;
+      final allocation=stock.tryAllocate([
+        WoodCutRequest(widthCm:width,heightCm:height,count:count),
+      ]);
+      if(!allocation.successful) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:Text(allocation.message??'قياسات القص لا تركب على الألواح المتوفرة')));
+        return;
+      }
+      final estimatedReserved=stock.reservedAreaEstimate(width,height,count);
+      Navigator.pop(context,UsedMaterial(
+        id:material.id,name:material.name,unit:'سم²',category:material.category,
+        amount:estimatedReserved,unitCost:material.unitCost/stock.boardArea,
+        widthCm:width,heightCm:height,pieceCount:count,
+      ));
+      return;
+    }
+    if(material.category=='خشب' && material.boardInventory==null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:Text('فعّل قياسات اللوح من المخزون أولاً ليحسب قص الخشب بدقّة')));
+      return;
+    }
+    final amount=double.tryParse(_amount.text.trim())??0;
+    if(!amount.isFinite || amount<=0 || amount>material.quantity) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:Text('أدخل كمية صحيحة ضمن المخزون')));
+      return;
+    }
+    Navigator.pop(context,UsedMaterial(
+      id:material.id,name:material.name,unit:material.unit,
+      category:material.category,amount:amount,unitCost:material.unitCost));
+  }
+
+  @override Widget build(BuildContext context) {
+    final material=widget.materials.firstWhere((m)=>m.id==chosenId);
+    final stock=material.boardInventory;
+    final hasWoodWithoutLayout=material.category=='خشب' && stock==null;
+    final width=double.tryParse(_width.text.trim())??0;
+    final height=double.tryParse(_height.text.trim())??0;
+    final count=int.tryParse(_pieceCount.text.trim())??0;
+    final result=stock==null || width<=0 || height<=0 || count<=0
+      ? null : stock.tryAllocate([WoodCutRequest(widthCm:width,heightCm:height,count:count)]);
+    final amount=double.tryParse(_amount.text.trim())??0;
+    final previewCost=stock==null ? amount*material.unitCost :
+      stock.reservedAreaEstimate(width,height,count)/stock.boardArea*material.unitCost;
+    return Directionality(textDirection:TextDirection.rtl,
+      child:AlertDialog(title:const Text('تفاصيل المواد والقص'),
+        content:SizedBox(width:440,child:SingleChildScrollView(
+          child:Column(mainAxisSize:MainAxisSize.min,children:[
+            DropdownButtonFormField<String>(
+              key:ValueKey(chosenId),
+              initialValue:chosenId,isExpanded:true,
+              decoration:const InputDecoration(labelText:'اختر المادة من المخزون'),
+              items:widget.materials.map((m)=>DropdownMenuItem(
+                value:m.id,child:Text(m.name,overflow:TextOverflow.ellipsis))).toList(),
+              onChanged:(v) {if(v!=null) setState(() {
+                chosenId=v; _amount.clear();_width.clear();_height.clear();_pieceCount.text='1';
+              });},
+            ),
+            const SizedBox(height:10),
+            if(hasWoodWithoutLayout) const Text(
+              'هيدا الخشب بعده مسجّل «قطعة». روح عالمخزون واضغط عليه وحدّد طول وعرض اللوح لتفعيل الخصم من البقايا.',
+              style:TextStyle(color:Colors.orangeAccent)),
+            if(stock!=null) ...[
+              Text('لوح: ${stock.widthCm.toStringAsFixed(1)} × ${stock.heightCm.toStringAsFixed(1)} سم'
+                ' • ${stock.physicalSheets} ألواح قابلة للقص'),
+              const SizedBox(height:10),
+              TextField(controller:_width,
+                decoration:const InputDecoration(labelText:'عرض القطعة المطلوب قصها (سم)'),
+                keyboardType:const TextInputType.numberWithOptions(decimal:true),
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:8),
+              TextField(controller:_height,
+                decoration:const InputDecoration(labelText:'طول القطعة المطلوب قصها (سم)'),
+                keyboardType:const TextInputType.numberWithOptions(decimal:true),
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:8),
+              TextField(controller:_pieceCount,
+                decoration:const InputDecoration(labelText:'كم قطعة من هالقياس؟'),
+                keyboardType:TextInputType.number,
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:8),
+              Text('قصّ الليزر المحسوب: ${(stock.kerfCm*10).toStringAsFixed(2)} ملم'),
+              if(result!=null && !result.successful)
+                Text(result.message!,style:const TextStyle(color:Colors.orangeAccent)),
+            ] else if(!hasWoodWithoutLayout) ...[
+              TextField(controller:_amount,
+                decoration:InputDecoration(labelText:'الكمية المستخدمة (${material.unit})'),
+                keyboardType:const TextInputType.numberWithOptions(decimal:true),
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:12),
               Text('المتوفر: ${material.quantity.toStringAsFixed(2)} ${material.unit}'),
-              Text('التكلفة المحسوبة: ${money(q * material.unitCost)}',
-                style: const TextStyle(color: gold, fontWeight: FontWeight.bold)),
-              if (q > material.quantity)
-                const Text('تنبيه: الاستهلاك أكبر من الكمية المتوفرة',
-                  style: TextStyle(color: Colors.orangeAccent)),
-            ]))),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-            FilledButton(onPressed: () {
-              if (q <= 0 || !q.isFinite) {
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('أدخل قياس أو كمية صحيحة')));
-                return;
-              }
-              Navigator.pop(ctx, UsedMaterial(id: material.id, name: material.name,
-                unit: material.unit, category: material.category, amount: q,
-                unitCost: material.unitCost,
-                widthCm: area ? double.tryParse(width.text) : null,
-                heightCm: area ? double.tryParse(height.text) : null));
-            }, child: const Text('إضافة المادة'))],
-        ));
-    }));
-  amount.dispose(); width.dispose(); height.dispose();
-  return chosen;
+            ],
+            const SizedBox(height:12),
+            if(!hasWoodWithoutLayout)
+              Text('التكلفة التقديرية: ${money(previewCost)}',
+                style:const TextStyle(color:gold,fontWeight:FontWeight.bold)),
+            if(stock!=null) const Text(
+              'المساحة الفعلية المتبقية تنحسب من مستطيلات الألواح، وما منجمع بقايا منفصلة كأنها قطعة واحدة.',
+              style:TextStyle(fontSize:12,color:Colors.white70)),
+          ]))),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
+          FilledButton(onPressed:hasWoodWithoutLayout ? null : _submit,
+            child:const Text('إضافة القياس للطلب')),
+        ],
+      ),
+    );
+  }
 }
 
 Widget costLine(String title, double value, {bool bold = false}) => Padding(
@@ -667,8 +908,10 @@ Future<void> showOrderForm(BuildContext context, StudioStore store) async {
             if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
               child: Text('اختار الخشب أو الأكريليك أو التغليف من مخزونك.')),
             ...used.asMap().entries.map((e) => ListTile(dense: true,
-              title: Text(e.value.name),
-              subtitle: Text('${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
+              title:Text(e.value.name),
+              subtitle:Text(e.value.isWoodBoardCut
+                ? '${e.value.widthCm!.toStringAsFixed(1)} × ${e.value.heightCm!.toStringAsFixed(1)} سم × ${e.value.pieceCount} قطع'
+                : '${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(money(e.value.cost), style: const TextStyle(color: gold)),
                 IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
@@ -738,111 +981,334 @@ Widget _field(String label, TextEditingController controller,
       ? 'هالخانة مطلوبة' : numeric && value != null && value.isNotEmpty && double.tryParse(value) == null
       ? 'اكتب رقم صحيح' : null));
 
+
+
 class InventoryPage extends StatelessWidget {
   const InventoryPage({super.key, required this.store});
   final StudioStore store;
-  @override Widget build(BuildContext context) => content([
-    Row(children: [const Expanded(child: Text('المخزون', style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold))),
-      FilledButton.icon(onPressed: () => _addMaterial(context), icon: const Icon(Icons.add), label: const Text('مادة جديدة'))]),
-    const SizedBox(height: 12),
-    if (store.materials.isEmpty) const Text('بعد ما أضفت مواد. ابدأ بالخشب، الأكريليك، والتغليف.'),
-    ...store.materials.map((m) => Card(child: ListTile(
-      title: Text(m.name),
-      subtitle: Text('${m.category} • ${m.quantity.toStringAsFixed(2)} ${m.unit} • سعر ${m.unit} ${m.unitCost.toStringAsFixed(6)} دولار'),
-      trailing: m.quantity <= m.reorderLevel ? const Icon(Icons.warning_amber, color: gold) : null,
-      onTap: () async {
-        final input = TextEditingController(text: m.quantity.toString());
-        final price = TextEditingController(text: (m.unitCost * m.packUnits).toStringAsFixed(3));
-        final value = await showDialog<List<double>>(context: context,
-          builder: (ctx) => AlertDialog(title: Text('تعديل ${m.name}'),
-            content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
-              _field('الكمية الحالية (${m.unit})', input, numeric: true),
-              _field('سعر اللوح/الرول/العبوة', price, numeric: true),
-            ])),
-            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-              FilledButton(onPressed: () {
-                final n = double.tryParse(input.text);
-                final c = double.tryParse(price.text);
-                if (n != null && c != null && n.isFinite && c.isFinite && n >= 0 && c >= 0) {
-                  Navigator.pop(ctx, [n, c]);
-                }
-              }, child: const Text('حفظ'))]));
-        if (value != null) {
-          m.quantity = value[0];
-          m.unitCost = value[1] / m.packUnits;
-          await store.updateMaterial(m);
-        }
-        input.dispose(); price.dispose();
-      }))),
-    const SizedBox(height: 18),
-    const Text('بتختار المواد داخل الطلب. عند تأكيد استهلاكها بتنخصم من المخزون مرة واحدة فقط.',
-      style: TextStyle(color: Colors.white70)),
-  ]);
+
   Future<void> _addMaterial(BuildContext context) async {
-    final name = TextEditingController(); final qty = TextEditingController(text: '0');
-    final limit = TextEditingController(text: '0');
-    final packCount = TextEditingController(text: '1');
-    final lengthCm = TextEditingController(text: '120');
-    final widthCm = TextEditingController(text: '80');
-    final rollMeters = TextEditingController(text: '10');
-    final packCost = TextEditingController(text: '0');
-    var unit = 'قطعة';
-    var category = 'خشب';
-    final key = GlobalKey<FormState>();
-    await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
-      builder: (ctx, update) => Directionality(textDirection: TextDirection.rtl,
-      child: AlertDialog(title: const Text('مادة جديدة'), content: SizedBox(width: 440,
-      child: Form(key: key, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        _field('اسم المادة (مثل خشب MDF 3mm)', name, required: true),
-        DropdownButtonFormField<String>(value: category,
-          decoration: const InputDecoration(labelText: 'نوع المادة'),
-          items: ['خشب', 'أكريليك', 'تغليف', 'لاصق', 'دهان', 'أخرى']
-            .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-          onChanged: (v) { if (v != null) update(() => category = v); }),
-        const SizedBox(height: 10),
-        DropdownButtonFormField<String>(value: unit,
-          decoration: const InputDecoration(labelText: 'وحدة حساب الاستخدام'),
-          items: ['قطعة', 'سم²', 'سم', 'متر', 'غرام', 'مل']
-            .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-          onChanged: (v) { if (v != null) update(() => unit = v); }),
-        const SizedBox(height: 10),
-        _field('عدد الألواح أو الرولات أو العبوات الموجودة', qty, numeric: true, required: true),
-        _field('حد تنبيه النقص ($unit)', limit, numeric: true, required: true),
-        if (unit == 'سم²') ...[
-          _field('طول اللوح (سم)', lengthCm, numeric: true, required: true),
-          _field('عرض اللوح (سم)', widthCm, numeric: true, required: true),
-        ] else if (unit == 'سم')
-          _field('طول الرول (متر)', rollMeters, numeric: true, required: true)
-        else _field('كم $unit بالعبوة الواحدة؟', packCount, numeric: true, required: true),
-        _field('سعر اللوح أو الرول أو العبوة بالدولار', packCost, numeric: true, required: true),
-        const Text('البرنامج بيحوّل قياس اللوح للمساحة، وطول الرول للسنتيمتر، وبيحسب تكلفة الجزء المستخدم تلقائياً.',
-          style: TextStyle(fontSize: 12, color: Colors.white70)),
-      ])))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-        FilledButton(onPressed: () async {
-          if (!key.currentState!.validate()) return;
-          final packs = double.tryParse(qty.text) ?? -1;
-          final l = double.tryParse(limit.text) ?? -1;
-          final c = double.tryParse(packCost.text) ?? -1;
-          final count = unit == 'سم²'
-              ? (double.tryParse(lengthCm.text) ?? 0) * (double.tryParse(widthCm.text) ?? 0)
-              : unit == 'سم' ? (double.tryParse(rollMeters.text) ?? 0) * 100
-              : double.tryParse(packCount.text) ?? -1;
-          if (packs < 0 || l < 0 || c < 0 || count <= 0 ||
-              !packs.isFinite || !l.isFinite || !c.isFinite || !count.isFinite) {
-            ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع القياسات والكمية والسعر')));
-            return;
-          }
-          try {
-            await store.addMaterial(Material(id: const Uuid().v4(),
-              name: name.text.trim(), quantity: packs * count, unit: unit, category: category,
-              reorderLevel: l, unitCost: c / count, packUnits: count));
-            if (ctx.mounted) Navigator.pop(ctx);
-          } catch (e) { if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('$e'))); }
-        }, child: const Text('حفظ المادة'))]))));
-    for (final c in [name, qty, limit, packCount, packCost, lengthCm, widthCm, rollMeters]) { c.dispose(); }
+    final created=await showDialog<Material>(
+      context:context,builder:(_)=>const MaterialAddDialog());
+    if(created==null) return;
+    try { await store.addMaterial(created); }
+    catch(e) {
+      if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content:Text('تعذّر حفظ المادة: $e')));
+    }
+  }
+
+  Future<void> _editMaterial(BuildContext context,Material m) async {
+    final result=await showDialog<MaterialEditResult>(
+      context:context,builder:(_)=>MaterialEditDialog(material:m));
+    if(result==null) return;
+    final oldQuantity=m.quantity, oldCost=m.unitCost, oldPack=m.packUnits, oldUnit=m.unit;
+    final oldBoards=m.boardInventory;
+    try {
+      if(result.convertedBoards!=null) {
+        m.boardInventory=result.convertedBoards;
+        m.quantity=result.convertedBoards!.physicalSheets.toDouble();
+        m.unit='لوح';
+        m.packUnits=1;
+        m.unitCost=result.packagePrice;
+      } else if(m.boardInventory!=null) {
+        final updated=m.boardInventory!.withAddedSheets(result.addedSheets);
+        m.boardInventory=updated;
+        m.quantity=updated.physicalSheets.toDouble();
+        m.unitCost=result.packagePrice;
+      } else {
+        m.quantity=result.quantity;
+        m.unitCost=result.packagePrice/m.packUnits;
+      }
+      await store.updateMaterial(m);
+    } catch(e) {
+      m.quantity=oldQuantity;m.unitCost=oldCost;m.packUnits=oldPack;
+      m.unit=oldUnit;m.boardInventory=oldBoards;
+      if(context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content:Text('تعذّر تعديل المادة: $e')));
+    }
+  }
+
+  @override Widget build(BuildContext context) => content([
+    Row(children:[
+      const Expanded(child:Text('المخزون',
+        style:TextStyle(fontSize:23,fontWeight:FontWeight.bold))),
+      FilledButton.icon(icon:const Icon(Icons.add),
+        label:const Text('مادة جديدة'),onPressed:()=>_addMaterial(context)),
+    ]),
+    const SizedBox(height:12),
+    if(store.materials.isEmpty)
+      const Text('بعد ما أضفت مواد. ابدأ بالألواح والخامات والتغليف.'),
+    ...store.materials.map((m) {
+      final b=m.boardInventory;
+      return Card(child:ListTile(
+        title:Text(m.name),
+        subtitle:Text(b==null
+          ? '${m.category} • ${m.quantity.toStringAsFixed(2)} ${m.unit} • سعر الوحدة ${m.unitCost.toStringAsFixed(4)} دولار'
+          : 'لوح ${b.widthCm.toStringAsFixed(0)}×${b.heightCm.toStringAsFixed(0)} سم'
+            ' • ${b.physicalSheets} ألواح فيها مساحة'
+            ' (${b.untouchedSheets} كاملة، ${b.openedSheets} فيها قص)'
+            '\nباقي مساحة ${b.totalFreeArea.toStringAsFixed(0)} سم²'
+            ' = ${b.sheetEquivalents.toStringAsFixed(2)} لوح مساحة'
+            ' • سعر اللوح ${money(m.unitCost)}'
+            '\nاضغط لتعديل المقاسات/توريد ألواح جديدة',
+          maxLines:5),
+        isThreeLine:b!=null,
+        trailing: m.quantity<=m.reorderLevel
+          ? const Icon(Icons.warning_amber,color:gold) : null,
+        onTap:()=>_editMaterial(context,m),
+      ));
+    }),
+    const SizedBox(height:18),
+    const Text('لألواح الخشب: قصّات العرض × الطول تُحجز من بقايا اللوح نفسه عند تأكيد الاستهلاك.'
+      ' بنحفظ مكان كل مستطيل لحتى ما نستخدم نفس المساحة مرتين.',
+      style:TextStyle(color:Colors.white70)),
+  ]);
+}
+
+class MaterialEditResult {
+  const MaterialEditResult(this.quantity,this.packagePrice,
+    {this.convertedBoards,this.addedSheets=0});
+  final double quantity,packagePrice;
+  final WoodBoardStock? convertedBoards;
+  final int addedSheets;
+}
+
+class MaterialEditDialog extends StatefulWidget {
+  const MaterialEditDialog({super.key,required this.material});
+  final Material material;
+  @override State<MaterialEditDialog> createState()=>_MaterialEditDialogState();
+}
+
+class _MaterialEditDialogState extends State<MaterialEditDialog> {
+  late final TextEditingController _quantity;
+  late final TextEditingController _price;
+  final _length=TextEditingController(text:'120');
+  final _width=TextEditingController(text:'80');
+  final _kerfMm=TextEditingController(text:'0.2');
+  final _additional=TextEditingController(text:'0');
+  bool _convertToBoards=false;
+  @override void initState() {
+    super.initState();
+    final m=widget.material;
+    _quantity=TextEditingController(text:m.quantity.toString());
+    _price=TextEditingController(
+      text:(m.unitCost*m.packUnits).toStringAsFixed(3));
+  }
+  @override void dispose() {
+    for(final c in [_quantity,_price,_length,_width,_kerfMm,_additional]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _submit() {
+    final q=double.tryParse(_quantity.text.trim());
+    final price=double.tryParse(_price.text.trim());
+    if(q==null||price==null||!q.isFinite||!price.isFinite||q<0||price<0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content:Text('راجع عدد الألواح والسعر')));
+      return;
+    }
+    final original=widget.material;
+    if(original.boardInventory!=null) {
+      final added=int.tryParse(_additional.text.trim());
+      if(added==null||added<0||added>500) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content:Text('اكتب عدد صحيح للألواح الجديدة')));
+        return;
+      }
+      Navigator.pop(context,MaterialEditResult(q,price,addedSheets:added));
+      return;
+    }
+    if(original.category=='خشب' && _convertToBoards) {
+      final packs=q/original.packUnits;
+      final count=packs.round();
+      final length=double.tryParse(_length.text.trim())??0;
+      final width=double.tryParse(_width.text.trim())??0;
+      final kerfMm=double.tryParse(_kerfMm.text.trim())??-1;
+      if(count<0||count>500||(packs-count).abs()>1e-6||
+         !length.isFinite||!width.isFinite||!kerfMm.isFinite||
+         length<=0||width<=0||kerfMm<0||kerfMm>3) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:Text('حدد عدد ألواح كامل وقياسات موجبة وهدر قصّ صحيح')));
+        return;
+      }
+      final stock=WoodBoardStock.newSheets(count:count,
+        widthCm:width,heightCm:length,kerfCm:kerfMm/10);
+      Navigator.pop(context,MaterialEditResult(q,price,convertedBoards:stock));
+      return;
+    }
+    Navigator.pop(context,MaterialEditResult(q,price));
+  }
+  @override Widget build(BuildContext context) {
+    final m=widget.material;
+    final oldSheets=m.boardInventory;
+    return Directionality(textDirection:TextDirection.rtl,
+      child:AlertDialog(
+        title:Text('تعديل ${m.name}'),
+        content:SizedBox(width:440,child:SingleChildScrollView(
+          child:Column(mainAxisSize:MainAxisSize.min,children:[
+            if(oldSheets==null) ...[
+              _field('الكمية الحالية (${m.unit})',_quantity,numeric:true),
+              if(m.category=='خشب') ...[
+                SwitchListTile(
+                  contentPadding:EdgeInsets.zero,
+                  value:_convertToBoards,
+                  title:const Text('فعّل حساب القص حسب قياس اللوح'),
+                  subtitle:const Text('يحوّل قطع الخشب الموجودة إلى ألواح فعلية، بعد ما تأكد المقاس'),
+                  onChanged:(v)=>setState(()=>_convertToBoards=v)),
+                if(_convertToBoards) ...[
+                  _field('طول اللوح الكامل (سم)',_length,numeric:true),
+                  _field('عرض اللوح الكامل (سم)',_width,numeric:true),
+                  _field('هدر عرض قص الليزر (ملم)',_kerfMm,numeric:true),
+                  Text('رح نعتبر المخزون الحالي ${(m.quantity/m.packUnits).toStringAsFixed(0)} ألواح'
+                    ' جديدة بنفس القياس. تأكّد من القياس قبل الحفظ.',
+                    style:const TextStyle(fontSize:12,color:Colors.orangeAccent)),
+                ],
+              ],
+            ] else ...[
+              Text('المقاس الحالي: ${oldSheets.widthCm.toStringAsFixed(1)} × ${oldSheets.heightCm.toStringAsFixed(1)} سم'),
+              Text('${oldSheets.physicalSheets} ألواح قابلة للقص، منها ${oldSheets.openedSheets} فيها قص'),
+              Text('بقايا إجمالية: ${oldSheets.totalFreeArea.toStringAsFixed(0)} سم²'),
+              const SizedBox(height:10),
+              _field('عدد الألواح الجديدة المراد إضافتها',_additional,numeric:true),
+              const Text('للحفاظ على القصّات السابقة، ما منغيّر قياس اللوح بعد أول استعمال.',
+                style:TextStyle(fontSize:12,color:Colors.white70)),
+            ],
+            _field('سعر اللوح/الرول/العبوة بالدولار',_price,numeric:true),
+          ]))),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
+          FilledButton(onPressed:_submit,child:const Text('حفظ')),
+        ],
+      ));
   }
 }
 
+class MaterialAddDialog extends StatefulWidget {
+  const MaterialAddDialog({super.key});
+  @override State<MaterialAddDialog> createState()=>_MaterialAddDialogState();
+}
+
+class _MaterialAddDialogState extends State<MaterialAddDialog> {
+  final _formKey=GlobalKey<FormState>();
+  final _name=TextEditingController();
+  final _qty=TextEditingController(text:'0');
+  final _limit=TextEditingController(text:'0');
+  final _packCount=TextEditingController(text:'1');
+  final _lengthCm=TextEditingController(text:'120');
+  final _widthCm=TextEditingController(text:'80');
+  final _rollMeters=TextEditingController(text:'10');
+  final _packCost=TextEditingController(text:'0');
+  final _kerfMm=TextEditingController(text:'0.2');
+  String _unit='قطعة';
+  String _category='خشب';
+  bool _boardTracking=true;
+
+  @override void dispose() {
+    for(final c in [_name,_qty,_limit,_packCount,_lengthCm,_widthCm,
+      _rollMeters,_packCost,_kerfMm]) { c.dispose(); }
+    super.dispose();
+  }
+  void _submit() {
+    if(!_formKey.currentState!.validate()) return;
+    final packs=double.tryParse(_qty.text.trim())??-1;
+    final limit=double.tryParse(_limit.text.trim())??-1;
+    final price=double.tryParse(_packCost.text.trim())??-1;
+    if(!packs.isFinite||!limit.isFinite||!price.isFinite||
+       packs<0||limit<0||price<0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content:Text('راجع الكمية والسعر')));
+      return;
+    }
+    if(_category=='خشب' && _boardTracking) {
+      final width=double.tryParse(_widthCm.text.trim())??0;
+      final length=double.tryParse(_lengthCm.text.trim())??0;
+      final kerfMm=double.tryParse(_kerfMm.text.trim())??-1;
+      if(packs!=packs.roundToDouble()||packs>500||
+        !width.isFinite||!length.isFinite||!kerfMm.isFinite||
+        width<=0||length<=0||kerfMm<0||kerfMm>3) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:Text('أدخل عدد ألواح صحيح، وطول وعرض اللوح، وهدر القص')));
+        return;
+      }
+      final stock=WoodBoardStock.newSheets(
+        count:packs.toInt(),widthCm:width,heightCm:length,kerfCm:kerfMm/10);
+      Navigator.pop(context,Material(
+        id:const Uuid().v4(),name:_name.text.trim(),category:'خشب',
+        quantity:packs,unit:'لوح',reorderLevel:limit,
+        unitCost:price,packUnits:1,boardInventory:stock));
+      return;
+    }
+    final count=_unit=='سم²'
+      ? (double.tryParse(_lengthCm.text.trim())??0) *
+        (double.tryParse(_widthCm.text.trim())??0)
+      : _unit=='سم'
+        ? (double.tryParse(_rollMeters.text.trim())??0)*100
+        : double.tryParse(_packCount.text.trim())??-1;
+    if(!count.isFinite||count<=0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content:Text('أدخل قياسات العبوة بشكل صحيح')));
+      return;
+    }
+    Navigator.pop(context,Material(
+      id:const Uuid().v4(),name:_name.text.trim(),category:_category,
+      quantity:packs*count,unit:_unit,reorderLevel:limit,
+      unitCost:price/count,packUnits:count));
+  }
+
+  @override Widget build(BuildContext context) =>
+    Directionality(textDirection:TextDirection.rtl,child:AlertDialog(
+      title:const Text('مادة جديدة'),
+      content:SizedBox(width:440,child:Form(key:_formKey,
+        child:SingleChildScrollView(child:Column(mainAxisSize:MainAxisSize.min,children:[
+          _field('اسم المادة (مثل خشب MDF 3mm)',_name,required:true),
+          DropdownButtonFormField<String>(
+            initialValue:_category,
+            decoration:const InputDecoration(labelText:'نوع المادة'),
+            items:['خشب','أكريليك','تغليف','لاصق','دهان','أخرى']
+              .map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),
+            onChanged:(v){if(v!=null)setState(()=>_category=v);}),
+          const SizedBox(height:10),
+          if(_category=='خشب')
+            SwitchListTile(
+              contentPadding:EdgeInsets.zero,
+              value:_boardTracking,
+              title:const Text('حساب الألواح والبقايا تلقائياً'),
+              subtitle:const Text('بتحدّد طول وعرض اللوح، وبعدين طول وعرض القصّات داخل كل طلب'),
+              onChanged:(v)=>setState(()=>_boardTracking=v)),
+          if(!(_category=='خشب' && _boardTracking))
+            DropdownButtonFormField<String>(
+              initialValue:_unit,
+              decoration:const InputDecoration(labelText:'وحدة حساب الاستخدام'),
+              items:['قطعة','سم²','سم','متر','غرام','مل']
+                .map((v)=>DropdownMenuItem(value:v,child:Text(v))).toList(),
+              onChanged:(v){if(v!=null)setState(()=>_unit=v);}),
+          const SizedBox(height:10),
+          _field(_category=='خشب'&&_boardTracking?'عدد ألواح الخشب الكاملة':'عدد العبوات الموجودة',
+            _qty,numeric:true,required:true),
+          _field('حد تنبيه النقص',_limit,numeric:true,required:true),
+          if(_category=='خشب'&&_boardTracking) ...[
+            _field('طول اللوح الكامل (سم)',_lengthCm,numeric:true,required:true),
+            _field('عرض اللوح الكامل (سم)',_widthCm,numeric:true,required:true),
+            _field('هدر عرض قص الليزر (ملم)',_kerfMm,numeric:true,required:true),
+            const Text('120×80 سم مقاس مقترح فقط؛ تأكّد من مقاس لوحك قبل الحفظ.',
+              style:TextStyle(color:Colors.orangeAccent,fontSize:12)),
+          ] else if(_unit=='سم²') ...[
+            _field('طول اللوح (سم)',_lengthCm,numeric:true,required:true),
+            _field('عرض اللوح (سم)',_widthCm,numeric:true,required:true),
+          ] else if(_unit=='سم')
+            _field('طول الرول (متر)',_rollMeters,numeric:true,required:true)
+          else _field('كم $_unit بالعبوة الواحدة؟',_packCount,numeric:true,required:true),
+          _field('سعر اللوح أو الرول أو العبوة بالدولار',_packCost,numeric:true,required:true),
+        ])))),
+      actions:[
+        TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
+        FilledButton(onPressed:_submit,child:const Text('حفظ المادة')),
+      ],
+    ));
+}
 class AccountsPage extends StatelessWidget {
   const AccountsPage({super.key, required this.store});
   final StudioStore store;

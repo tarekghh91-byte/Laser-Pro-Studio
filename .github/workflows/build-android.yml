@@ -38,11 +38,15 @@ jobs:
           channel: stable
           cache: true
       - name: Generate Android platform files
-        run: flutter create --project-name laser_pro_studio --platforms=android .
+        run: flutter create --org com.laserpro.recovery --project-name laser_pro_studio --platforms=android .
       - name: Fetch dependencies
         run: flutter pub get
+      - name: Remove Flutter generated template test
+        run: rm -f test/widget_test.dart
       - name: Analyze Dart code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Test inventory modal lifecycle
+        run: flutter test test/inventory_dialog_test.dart
       - name: Build debug APK (test only; syncing prototype)
         run: flutter build apk --debug
       - name: Upload APK

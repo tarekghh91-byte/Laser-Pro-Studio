@@ -9,6 +9,9 @@ dependencies:
     sdk: flutter
   path_provider: ^2.1.5
   supabase_flutter: ^2.18.3
+  # Android 2.5.0 JNI/R8 release regression (Flutter issue #194649).
+  # Pin the tested pre-JNI implementation until upstream is fixed.
+  shared_preferences_android: 2.4.28
   uuid: ^4.5.2
 dev_dependencies:
   flutter_test:
