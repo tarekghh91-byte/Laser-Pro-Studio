@@ -663,7 +663,10 @@ class OrderTile extends StatelessWidget {
             const Divider(),
             const Text('تفاصيل تكلفة الطلب', style: TextStyle(fontWeight: FontWeight.bold)),
             for (final line in order.usedMaterials)
-              costLine('${line.name} (${line.amount.toStringAsFixed(2)} ${line.unit})', line.cost),
+              costLine(line.isWoodBoardCut
+                ? '${line.name} — ${line.widthCm!.toStringAsFixed(1)} × ${line.heightCm!.toStringAsFixed(1)} سم × ${line.pieceCount} قطع'
+                : '${line.name} (${line.amount.toStringAsFixed(2)} ${line.unit})',
+                line.cost),
             if (order.usedMaterials.isEmpty)
               const Text('هيدا طلب قديم، تكلفته المسجّلة محفوظة.'),
             costLine('المواد والتغليف', order.materialCost),
@@ -905,8 +908,10 @@ Future<void> showOrderForm(BuildContext context, StudioStore store) async {
             if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
               child: Text('اختار الخشب أو الأكريليك أو التغليف من مخزونك.')),
             ...used.asMap().entries.map((e) => ListTile(dense: true,
-              title: Text(e.value.name),
-              subtitle: Text('${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
+              title:Text(e.value.name),
+              subtitle:Text(e.value.isWoodBoardCut
+                ? '${e.value.widthCm!.toStringAsFixed(1)} × ${e.value.heightCm!.toStringAsFixed(1)} سم × ${e.value.pieceCount} قطع'
+                : '${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(money(e.value.cost), style: const TextStyle(color: gold)),
                 IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
