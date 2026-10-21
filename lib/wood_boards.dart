@@ -86,6 +86,17 @@ class WoodBoardStock {
   double get totalCutArea => boards.fold(0,(double s,b)=>s+b.usedArea);
   double get totalWasteArea => math.max(0,boardArea*boards.length-totalFreeArea-totalCutArea);
   double get sheetEquivalents => totalFreeArea / boardArea;
+  WoodBoardStock withAddedSheets(int extra) {
+    if(extra<0 || extra>500 || boards.length+extra>500) {
+      throw ArgumentError('Too many added panels');
+    }
+    if(extra==0) return copy();
+    final newGroup=WoodBoardStock.newSheets(count:extra,widthCm:widthCm,
+      heightCm:heightCm,kerfCm:kerfCm);
+    return WoodBoardStock(widthCm:widthCm,heightCm:heightCm,kerfCm:kerfCm,
+      boards:[...boards.map((b)=>b.copy()),...newGroup.boards]);
+  }
+
   WoodBoardStock copy() => WoodBoardStock(widthCm:widthCm,heightCm:heightCm,
     kerfCm:kerfCm,boards:boards.map((b)=>b.copy()).toList());
 
