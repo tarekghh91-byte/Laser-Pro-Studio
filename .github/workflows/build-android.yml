@@ -8,6 +8,12 @@ on:
       - 'pubspec.yaml'
       - '.github/workflows/build-android.yml'
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - '.github/workflows/build-android.yml'
 
 permissions:
   contents: read
@@ -35,7 +41,9 @@ jobs:
         run: flutter create --project-name laser_pro_studio --platforms=android .
       - name: Fetch dependencies
         run: flutter pub get
-      - name: Build debug APK (test only; local data)
+      - name: Analyze Dart code
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Build debug APK (test only; syncing prototype)
         run: flutter build apk --debug
       - name: Upload APK
         uses: actions/upload-artifact@v4
