@@ -56,7 +56,7 @@ jobs:
       - name: Verify safe SharedPreferences Android dependency
         run: |
           flutter pub deps --style=compact | tee /tmp/flutter-deps.txt
-          grep -F 'shared_preferences_android 2.4.29' /tmp/flutter-deps.txt
+          grep -F 'shared_preferences_android 2.4.28' /tmp/flutter-deps.txt
           grep -q 'shared_preferences_android:' pubspec.lock
       - name: Check compilation
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
