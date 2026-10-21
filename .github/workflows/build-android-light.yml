@@ -37,7 +37,7 @@ jobs:
           channel: stable
           cache: true
       - name: Generate Android app
-        run: flutter create --org com.laserpro.r8fix --project-name laser_pro_studio --platforms=android .
+        run: flutter create --org com.laserpro.woodcuts --project-name laser_pro_studio --platforms=android .
       - name: Enable network access and remove generated counter test
         run: |
           python3 - <<'PY'
@@ -45,7 +45,7 @@ jobs:
           f=Path('android/app/src/main/AndroidManifest.xml')
           s=f.read_text()
           assert '<application' in s
-          s=s.replace('android:label="laser_pro_studio"', 'android:label="Laser Pro Sync Fix"')
+          s=s.replace('android:label="laser_pro_studio"', 'android:label="Laser Pro Wood Test"')
           if 'android.permission.INTERNET' not in s:
               s=s.replace('<application', '<uses-permission android:name="android.permission.INTERNET" />\n    <application', 1)
               f.write_text(s)
@@ -61,7 +61,7 @@ jobs:
       - name: Check compilation
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
       - name: Test inventory modal lifecycle
-        run: flutter test test/inventory_dialog_test.dart test/bootstrap_test.dart
+        run: flutter test test/inventory_dialog_test.dart test/bootstrap_test.dart test/wood_boards_test.dart test/wood_inventory_ui_test.dart
       - name: Build compact ARM64 APK
         run: flutter build apk --release --target-platform android-arm64
       - name: Verify APK is a zip archive
@@ -71,7 +71,7 @@ jobs:
       - name: Save small APK
         uses: actions/upload-artifact@v4
         with:
-          name: LaserProStudio-Android-ARM64-R8-FIX-TEST
+          name: LaserProStudio-Android-ARM64-WOOD-TEST
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
           if-no-files-found: error
