@@ -1,0 +1,38 @@
+name: Windows app (test build)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  windows-build:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Generate Windows runner
+        run: flutter create --project-name laser_pro_studio --platforms=windows .
+      - name: Get dependencies
+        run: flutter pub get
+      - name: Build Windows
+        run: flutter build windows --release
+      - name: Zip entire Windows distribution
+        shell: pwsh
+        run: |
+          $source = "build/windows/x64/runner/Release"
+          if (!(Test-Path $source)) { throw "Windows release build directory missing" }
+          Compress-Archive -Path "$source/*" -DestinationPath "Laser-Pro-Studio-Windows-TEST.zip"
+      - name: Upload Windows build
+        uses: actions/upload-artifact@v4
+        with:
+          name: Laser-Pro-Studio-Windows-TEST
+          path: Laser-Pro-Studio-Windows-TEST.zip
+          retention-days: 14
+          if-no-files-found: error
