@@ -708,71 +708,160 @@ class OrderTile extends StatelessWidget {
 }
 
 // The user enters only quantities/measurements, never a guessed dollar cost.
+
 Future<UsedMaterial?> chooseUsedMaterial(BuildContext context, StudioStore store) async {
   if (store.materials.isEmpty) {
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
       content: Text('ضيف المواد وأسعارها بالمخزون أولاً')));
     return null;
   }
-  var chosenId = store.materials.first.id;
-  final amount = TextEditingController();
-  final width = TextEditingController();
-  final height = TextEditingController();
-  final chosen = await showDialog<UsedMaterial>(context: context,
-    builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) {
-      final material = store.materials.firstWhere((m) => m.id == chosenId);
-      final area = material.unit == 'سم²';
-      final q = area
-          ? (double.tryParse(width.text) ?? 0) * (double.tryParse(height.text) ?? 0)
-          : double.tryParse(amount.text) ?? 0;
-      return Directionality(textDirection: TextDirection.rtl,
-        child: AlertDialog(title: const Text('شو استعملت من المواد؟'),
-          content: SizedBox(width: 420, child: SingleChildScrollView(
-            child: Column(mainAxisSize: MainAxisSize.min, children: [
-              DropdownButtonFormField<String>(value: chosenId, isExpanded: true,
-                decoration: const InputDecoration(labelText: 'اختر المادة من المخزون'),
-                items: store.materials.map((m) => DropdownMenuItem(
-                  value: m.id, child: Text('${m.name} — ${m.unit}', overflow: TextOverflow.ellipsis))).toList(),
-                onChanged: (v) { if (v != null) refresh(() {
-                  chosenId = v; amount.clear(); width.clear(); height.clear();
-                }); }),
-              const SizedBox(height: 10),
-              if (area) ...[
-                TextField(controller: width, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'طول الخشب المستخدم (سم)'),
-                  onChanged: (_) => refresh(() {})),
-                const SizedBox(height: 10),
-                TextField(controller: height, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: const InputDecoration(labelText: 'عرض الخشب المستخدم (سم)'),
-                  onChanged: (_) => refresh(() {})),
-              ] else TextField(controller: amount,
-                keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: InputDecoration(labelText: 'الكمية المستخدمة (${material.unit})'),
-                onChanged: (_) => refresh(() {})),
-              const SizedBox(height: 14),
+  return showDialog<UsedMaterial>(
+    context: context,
+    builder: (_) => CutMaterialDialog(materials: store.materials),
+  );
+}
+
+class CutMaterialDialog extends StatefulWidget {
+  const CutMaterialDialog({super.key,required this.materials});
+  final List<Material> materials;
+  @override State<CutMaterialDialog> createState()=>_CutMaterialDialogState();
+}
+
+class _CutMaterialDialogState extends State<CutMaterialDialog> {
+  late String chosenId;
+  final _amount=TextEditingController();
+  final _width=TextEditingController();
+  final _height=TextEditingController();
+  final _pieceCount=TextEditingController(text:'1');
+
+  @override void initState() {
+    super.initState();
+    chosenId=widget.materials.first.id;
+  }
+  @override void dispose() {
+    _amount.dispose();_width.dispose();_height.dispose();_pieceCount.dispose();
+    super.dispose();
+  }
+  void _submit() {
+    final material=widget.materials.firstWhere((m)=>m.id==chosenId);
+    if(material.boardInventory != null) {
+      final width=double.tryParse(_width.text.trim())??0;
+      final height=double.tryParse(_height.text.trim())??0;
+      final count=int.tryParse(_pieceCount.text.trim())??0;
+      if(!width.isFinite || !height.isFinite || width<=0 || height<=0 || count<1 || count>1000) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content:Text('أدخل طول وعرض وعدد القطع بشكل صحيح')));
+        return;
+      }
+      final stock=material.boardInventory!;
+      final allocation=stock.tryAllocate([
+        WoodCutRequest(widthCm:width,heightCm:height,count:count),
+      ]);
+      if(!allocation.successful) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content:Text(allocation.message??'قياسات القص لا تركب على الألواح المتوفرة')));
+        return;
+      }
+      final estimatedReserved=stock.reservedAreaEstimate(width,height,count);
+      Navigator.pop(context,UsedMaterial(
+        id:material.id,name:material.name,unit:'سم²',category:material.category,
+        amount:estimatedReserved,unitCost:material.unitCost/stock.boardArea,
+        widthCm:width,heightCm:height,pieceCount:count,
+      ));
+      return;
+    }
+    if(material.category=='خشب' && material.boardInventory==null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:Text('فعّل قياسات اللوح من المخزون أولاً ليحسب قص الخشب بدقّة')));
+      return;
+    }
+    final amount=double.tryParse(_amount.text.trim())??0;
+    if(!amount.isFinite || amount<=0 || amount>material.quantity) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content:Text('أدخل كمية صحيحة ضمن المخزون')));
+      return;
+    }
+    Navigator.pop(context,UsedMaterial(
+      id:material.id,name:material.name,unit:material.unit,
+      category:material.category,amount:amount,unitCost:material.unitCost));
+  }
+
+  @override Widget build(BuildContext context) {
+    final material=widget.materials.firstWhere((m)=>m.id==chosenId);
+    final stock=material.boardInventory;
+    final hasWoodWithoutLayout=material.category=='خشب' && stock==null;
+    final width=double.tryParse(_width.text.trim())??0;
+    final height=double.tryParse(_height.text.trim())??0;
+    final count=int.tryParse(_pieceCount.text.trim())??0;
+    final result=stock==null || width<=0 || height<=0 || count<=0
+      ? null : stock.tryAllocate([WoodCutRequest(widthCm:width,heightCm:height,count:count)]);
+    final amount=double.tryParse(_amount.text.trim())??0;
+    final previewCost=stock==null ? amount*material.unitCost :
+      stock.reservedAreaEstimate(width,height,count)/stock.boardArea*material.unitCost;
+    return Directionality(textDirection:TextDirection.rtl,
+      child:AlertDialog(title:const Text('تفاصيل المواد والقص'),
+        content:SizedBox(width:440,child:SingleChildScrollView(
+          child:Column(mainAxisSize:MainAxisSize.min,children:[
+            DropdownButtonFormField<String>(
+              key:ValueKey(chosenId),
+              initialValue:chosenId,isExpanded:true,
+              decoration:const InputDecoration(labelText:'اختر المادة من المخزون'),
+              items:widget.materials.map((m)=>DropdownMenuItem(
+                value:m.id,child:Text(m.name,overflow:TextOverflow.ellipsis))).toList(),
+              onChanged:(v) {if(v!=null) setState(() {
+                chosenId=v; _amount.clear();_width.clear();_height.clear();_pieceCount.text='1';
+              });},
+            ),
+            const SizedBox(height:10),
+            if(hasWoodWithoutLayout) const Text(
+              'هيدا الخشب بعده مسجّل «قطعة». روح عالمخزون واضغط عليه وحدّد طول وعرض اللوح لتفعيل الخصم من البقايا.',
+              style:TextStyle(color:Colors.orangeAccent)),
+            if(stock!=null) ...[
+              Text('لوح: ${stock.widthCm.toStringAsFixed(1)} × ${stock.heightCm.toStringAsFixed(1)} سم'
+                ' • ${stock.physicalSheets} ألواح قابلة للقص'),
+              const SizedBox(height:10),
+              TextField(controller:_width,
+                decoration:const InputDecoration(labelText:'عرض القطعة المطلوب قصها (سم)'),
+                keyboardType:const TextInputType.numberWithOptions(decimal:true),
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:8),
+              TextField(controller:_height,
+                decoration:const InputDecoration(labelText:'طول القطعة المطلوب قصها (سم)'),
+                keyboardType:const TextInputType.numberWithOptions(decimal:true),
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:8),
+              TextField(controller:_pieceCount,
+                decoration:const InputDecoration(labelText:'كم قطعة من هالقياس؟'),
+                keyboardType:TextInputType.number,
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:8),
+              Text('قصّ الليزر المحسوب: ${(stock.kerfCm*10).toStringAsFixed(2)} ملم'),
+              if(result!=null && !result.successful)
+                Text(result.message!,style:const TextStyle(color:Colors.orangeAccent)),
+            ] else if(!hasWoodWithoutLayout) ...[
+              TextField(controller:_amount,
+                decoration:InputDecoration(labelText:'الكمية المستخدمة (${material.unit})'),
+                keyboardType:const TextInputType.numberWithOptions(decimal:true),
+                onChanged:(_)=>setState((){})),
+              const SizedBox(height:12),
               Text('المتوفر: ${material.quantity.toStringAsFixed(2)} ${material.unit}'),
-              Text('التكلفة المحسوبة: ${money(q * material.unitCost)}',
-                style: const TextStyle(color: gold, fontWeight: FontWeight.bold)),
-              if (q > material.quantity)
-                const Text('تنبيه: الاستهلاك أكبر من الكمية المتوفرة',
-                  style: TextStyle(color: Colors.orangeAccent)),
-            ]))),
-          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-            FilledButton(onPressed: () {
-              if (q <= 0 || !q.isFinite) {
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('أدخل قياس أو كمية صحيحة')));
-                return;
-              }
-              Navigator.pop(ctx, UsedMaterial(id: material.id, name: material.name,
-                unit: material.unit, category: material.category, amount: q,
-                unitCost: material.unitCost,
-                widthCm: area ? double.tryParse(width.text) : null,
-                heightCm: area ? double.tryParse(height.text) : null));
-            }, child: const Text('إضافة المادة'))],
-        ));
-    }));
-  amount.dispose(); width.dispose(); height.dispose();
-  return chosen;
+            ],
+            const SizedBox(height:12),
+            if(!hasWoodWithoutLayout)
+              Text('التكلفة التقديرية: ${money(previewCost)}',
+                style:const TextStyle(color:gold,fontWeight:FontWeight.bold)),
+            if(stock!=null) const Text(
+              'المساحة الفعلية المتبقية تنحسب من مستطيلات الألواح، وما منجمع بقايا منفصلة كأنها قطعة واحدة.',
+              style:TextStyle(fontSize:12,color:Colors.white70)),
+          ]))),
+        actions:[
+          TextButton(onPressed:()=>Navigator.pop(context),child:const Text('إلغاء')),
+          FilledButton(onPressed:hasWoodWithoutLayout ? null : _submit,
+            child:const Text('إضافة القياس للطلب')),
+        ],
+      ),
+    );
+  }
 }
 
 Widget costLine(String title, double value, {bool bold = false}) => Padding(
