@@ -9,13 +9,113 @@ import 'cloud_sync.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
-Future<void> main() async {
+void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-    url: studioSupabaseUrl,
-    publishableKey: studioSupabasePublishableKey,
+  // Always paint a Flutter frame before initializing cloud plugins.
+  // Initialization failures must appear as an actionable screen instead of
+  // leaving Android frozen forever on its native Flutter splash screen.
+  runApp(const LaserProBootstrap());
+}
+
+class LaserProBootstrap extends StatefulWidget {
+  const LaserProBootstrap({super.key, this.initializeForTest});
+  // Dependency injection is used only by widget tests.
+  final Future<void> Function()? initializeForTest;
+
+  @override
+  State<LaserProBootstrap> createState() => _LaserProBootstrapState();
+}
+
+class _LaserProBootstrapState extends State<LaserProBootstrap> {
+  late Future<void> _initialization;
+
+  @override
+  void initState() {
+    super.initState();
+    _beginInitialization();
+  }
+
+  void _beginInitialization() {
+    _initialization = (widget.initializeForTest == null
+      ? Supabase.initialize(
+          url: studioSupabaseUrl,
+          publishableKey: studioSupabasePublishableKey,
+        ).then((_) {})
+      : widget.initializeForTest!())
+        .timeout(const Duration(seconds: 20),
+          onTimeout: () => throw TimeoutException('Supabase startup took too long'));
+  }
+
+  @override
+  Widget build(BuildContext context) => MaterialApp(
+    title: 'Laser Pro Studio',
+    debugShowCheckedModeBanner: false,
+    theme: ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.dark,
+      scaffoldBackgroundColor: const Color(0xFF17191F),
+      colorSchemeSeed: const Color(0xFFDAAF69),
+    ),
+    home: FutureBuilder<void>(
+      future: _initialization,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: SafeArea(child: Center(child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text('LASER PRO STUDIO', style: TextStyle(
+                    fontSize: 23, fontWeight: FontWeight.bold, color: Color(0xFFDAAF69))),
+                  SizedBox(height: 28),
+                  CircularProgressIndicator(),
+                  SizedBox(height: 18),
+                  Text('عم نجهّز اتصال التطبيق...'),
+                ],
+              ))),
+            ),
+          );
+        }
+        if (snapshot.hasError) {
+          return Directionality(
+            textDirection: TextDirection.rtl,
+            child: Scaffold(
+              body: SafeArea(child: Center(child: Padding(
+                padding: const EdgeInsets.all(24),
+                child: ConstrainedBox(
+                  constraints: const BoxConstraints(maxWidth: 440),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.cloud_off_outlined, size: 56, color: Color(0xFFDAAF69)),
+                      const SizedBox(height: 16),
+                      const Text('تعذّر تشغيل اتصال البرنامج',
+                        style: TextStyle(fontSize: 21, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 12),
+                      const Text('ما في داعي تحذف التطبيق أو حسابك. تَأكّد من الإنترنت وجرّب مرة تانية.',
+                        textAlign: TextAlign.center),
+                      const SizedBox(height: 8),
+                      SelectableText('${snapshot.error}',
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(fontSize: 12, color: Colors.white70)),
+                      const SizedBox(height: 20),
+                      FilledButton.icon(
+                        onPressed: () => setState(_beginInitialization),
+                        icon: const Icon(Icons.refresh),
+                        label: const Text('إعادة المحاولة'),
+                      ),
+                    ],
+                  ),
+                ),
+              ))),
+            ),
+          );
+        }
+        return const LaserProApp();
+      },
+    ),
   );
-  runApp(const LaserProApp());
 }
 
 const ink = Color(0xFF17191F);
