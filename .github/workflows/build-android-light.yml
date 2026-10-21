@@ -1,0 +1,62 @@
+name: Android Small APK (test)
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-android-light.yml'
+      - 'lib/**'
+      - 'pubspec.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android-arm64:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.7'
+          channel: stable
+          cache: true
+      - name: Generate Android app
+        run: flutter create --org com.laserpro --project-name laser_pro_studio --platforms=android .
+      - name: Enable network access and remove generated counter test
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          f=Path('android/app/src/main/AndroidManifest.xml')
+          s=f.read_text()
+          assert '<application' in s
+          if 'android.permission.INTERNET' not in s:
+              s=s.replace('<application', '<uses-permission android:name="android.permission.INTERNET" />\n    <application', 1)
+              f.write_text(s)
+          Path('test/widget_test.dart').unlink(missing_ok=True)
+          PY
+      - name: Flutter dependencies
+        run: flutter pub get
+      - name: Check compilation
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Build compact ARM64 APK
+        run: flutter build apk --release --target-platform android-arm64
+      - name: Verify APK is a zip archive
+        run: |
+          unzip -t build/app/outputs/flutter-apk/app-release.apk > /dev/null
+          ls -lh build/app/outputs/flutter-apk/app-release.apk
+      - name: Save small APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: LaserProStudio-Android-ARM64-SMALL-TEST
+          path: build/app/outputs/flutter-apk/app-release.apk
+          retention-days: 14
+          if-no-files-found: error
