@@ -13,7 +13,7 @@ Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await Supabase.initialize(
     url: studioSupabaseUrl,
-    anonKey: studioSupabasePublishableKey,
+    publishableKey: studioSupabasePublishableKey,
   );
   runApp(const LaserProApp());
 }
@@ -340,11 +340,14 @@ class _LaserProAppState extends State<LaserProApp> with WidgetsBindingObserver {
     _authSubscription = Supabase.instance.client.auth.onAuthStateChange.listen((state) {
       final next = state.session?.user.id;
       if (_uid == next || !mounted) return;
-      store?.dispose();
+      final previousStore = store;
       setState(() {
         _uid = next;
         store = next == null ? null : StudioStore(ownerId: next);
       });
+      // Dispose after old AnimatedBuilder leaves the tree, not while it
+      // still has dependents; this avoids route/widget teardown assertions.
+      WidgetsBinding.instance.addPostFrameCallback((_) => previousStore?.dispose());
       if (store != null) unawaited(store!.load());
     });
   }
@@ -738,109 +741,244 @@ Widget _field(String label, TextEditingController controller,
       ? 'هالخانة مطلوبة' : numeric && value != null && value.isNotEmpty && double.tryParse(value) == null
       ? 'اكتب رقم صحيح' : null));
 
+
 class InventoryPage extends StatelessWidget {
   const InventoryPage({super.key, required this.store});
   final StudioStore store;
-  @override Widget build(BuildContext context) => content([
-    Row(children: [const Expanded(child: Text('المخزون', style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold))),
-      FilledButton.icon(onPressed: () => _addMaterial(context), icon: const Icon(Icons.add), label: const Text('مادة جديدة'))]),
+
+  Future<void> _addMaterial(BuildContext context) async {
+    // Keep text controllers INSIDE the modal State. Only mutate the store after
+    // the modal has been popped, avoiding a notifier rebuild during teardown.
+    final created = await showDialog<Material>(
+      context: context,
+      builder: (_) => const MaterialAddDialog(),
+    );
+    if (created == null) return;
+    try {
+      await store.addMaterial(created);
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذّر حفظ المادة: $e')),
+        );
+      }
+    }
+  }
+
+  Future<void> _editMaterial(BuildContext context, Material material) async {
+    final result = await showDialog<MaterialEditResult>(
+      context: context,
+      builder: (_) => MaterialEditDialog(material: material),
+    );
+    if (result == null) return;
+    final oldQuantity = material.quantity;
+    final oldUnitCost = material.unitCost;
+    material.quantity = result.quantity;
+    material.unitCost = result.packagePrice / material.packUnits;
+    try {
+      await store.updateMaterial(material);
+    } catch (e) {
+      material.quantity = oldQuantity;
+      material.unitCost = oldUnitCost;
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تعذّر تعديل المادة: $e')),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => content([
+    Row(children: [
+      const Expanded(child: Text('المخزون',
+        style: TextStyle(fontSize: 23, fontWeight: FontWeight.bold))),
+      FilledButton.icon(
+        onPressed: () => _addMaterial(context),
+        icon: const Icon(Icons.add),
+        label: const Text('مادة جديدة'),
+      ),
+    ]),
     const SizedBox(height: 12),
-    if (store.materials.isEmpty) const Text('بعد ما أضفت مواد. ابدأ بالخشب، الأكريليك، والتغليف.'),
+    if (store.materials.isEmpty)
+      const Text('بعد ما أضفت مواد. ابدأ بالخشب، الأكريليك، والتغليف.'),
     ...store.materials.map((m) => Card(child: ListTile(
       title: Text(m.name),
       subtitle: Text('${m.category} • ${m.quantity.toStringAsFixed(2)} ${m.unit} • سعر ${m.unit} ${m.unitCost.toStringAsFixed(6)} دولار'),
-      trailing: m.quantity <= m.reorderLevel ? const Icon(Icons.warning_amber, color: gold) : null,
-      onTap: () async {
-        final input = TextEditingController(text: m.quantity.toString());
-        final price = TextEditingController(text: (m.unitCost * m.packUnits).toStringAsFixed(3));
-        final value = await showDialog<List<double>>(context: context,
-          builder: (ctx) => AlertDialog(title: Text('تعديل ${m.name}'),
-            content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
-              _field('الكمية الحالية (${m.unit})', input, numeric: true),
-              _field('سعر اللوح/الرول/العبوة', price, numeric: true),
-            ])),
-            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-              FilledButton(onPressed: () {
-                final n = double.tryParse(input.text);
-                final c = double.tryParse(price.text);
-                if (n != null && c != null && n.isFinite && c.isFinite && n >= 0 && c >= 0) {
-                  Navigator.pop(ctx, [n, c]);
-                }
-              }, child: const Text('حفظ'))]));
-        if (value != null) {
-          m.quantity = value[0];
-          m.unitCost = value[1] / m.packUnits;
-          await store.updateMaterial(m);
-        }
-        input.dispose(); price.dispose();
-      }))),
+      trailing: m.quantity <= m.reorderLevel
+        ? const Icon(Icons.warning_amber, color: gold) : null,
+      onTap: () => _editMaterial(context, m),
+    ))),
     const SizedBox(height: 18),
     const Text('بتختار المواد داخل الطلب. عند تأكيد استهلاكها بتنخصم من المخزون مرة واحدة فقط.',
       style: TextStyle(color: Colors.white70)),
   ]);
-  Future<void> _addMaterial(BuildContext context) async {
-    final name = TextEditingController(); final qty = TextEditingController(text: '0');
-    final limit = TextEditingController(text: '0');
-    final packCount = TextEditingController(text: '1');
-    final lengthCm = TextEditingController(text: '120');
-    final widthCm = TextEditingController(text: '80');
-    final rollMeters = TextEditingController(text: '10');
-    final packCost = TextEditingController(text: '0');
-    var unit = 'قطعة';
-    var category = 'خشب';
-    final key = GlobalKey<FormState>();
-    await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
-      builder: (ctx, update) => Directionality(textDirection: TextDirection.rtl,
-      child: AlertDialog(title: const Text('مادة جديدة'), content: SizedBox(width: 440,
-      child: Form(key: key, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
-        _field('اسم المادة (مثل خشب MDF 3mm)', name, required: true),
-        DropdownButtonFormField<String>(value: category,
-          decoration: const InputDecoration(labelText: 'نوع المادة'),
-          items: ['خشب', 'أكريليك', 'تغليف', 'لاصق', 'دهان', 'أخرى']
-            .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-          onChanged: (v) { if (v != null) update(() => category = v); }),
-        const SizedBox(height: 10),
-        DropdownButtonFormField<String>(value: unit,
-          decoration: const InputDecoration(labelText: 'وحدة حساب الاستخدام'),
-          items: ['قطعة', 'سم²', 'سم', 'متر', 'غرام', 'مل']
-            .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
-          onChanged: (v) { if (v != null) update(() => unit = v); }),
-        const SizedBox(height: 10),
-        _field('عدد الألواح أو الرولات أو العبوات الموجودة', qty, numeric: true, required: true),
-        _field('حد تنبيه النقص ($unit)', limit, numeric: true, required: true),
-        if (unit == 'سم²') ...[
-          _field('طول اللوح (سم)', lengthCm, numeric: true, required: true),
-          _field('عرض اللوح (سم)', widthCm, numeric: true, required: true),
-        ] else if (unit == 'سم')
-          _field('طول الرول (متر)', rollMeters, numeric: true, required: true)
-        else _field('كم $unit بالعبوة الواحدة؟', packCount, numeric: true, required: true),
-        _field('سعر اللوح أو الرول أو العبوة بالدولار', packCost, numeric: true, required: true),
-        const Text('البرنامج بيحوّل قياس اللوح للمساحة، وطول الرول للسنتيمتر، وبيحسب تكلفة الجزء المستخدم تلقائياً.',
-          style: TextStyle(fontSize: 12, color: Colors.white70)),
-      ])))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-        FilledButton(onPressed: () async {
-          if (!key.currentState!.validate()) return;
-          final packs = double.tryParse(qty.text) ?? -1;
-          final l = double.tryParse(limit.text) ?? -1;
-          final c = double.tryParse(packCost.text) ?? -1;
-          final count = unit == 'سم²'
-              ? (double.tryParse(lengthCm.text) ?? 0) * (double.tryParse(widthCm.text) ?? 0)
-              : unit == 'سم' ? (double.tryParse(rollMeters.text) ?? 0) * 100
-              : double.tryParse(packCount.text) ?? -1;
-          if (packs < 0 || l < 0 || c < 0 || count <= 0 ||
-              !packs.isFinite || !l.isFinite || !c.isFinite || !count.isFinite) {
-            ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع القياسات والكمية والسعر')));
-            return;
-          }
-          try {
-            await store.addMaterial(Material(id: const Uuid().v4(),
-              name: name.text.trim(), quantity: packs * count, unit: unit, category: category,
-              reorderLevel: l, unitCost: c / count, packUnits: count));
-            if (ctx.mounted) Navigator.pop(ctx);
-          } catch (e) { if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('$e'))); }
-        }, child: const Text('حفظ المادة'))]))));
-    for (final c in [name, qty, limit, packCount, packCost, lengthCm, widthCm, rollMeters]) { c.dispose(); }
+}
+
+class MaterialEditResult {
+  const MaterialEditResult(this.quantity, this.packagePrice);
+  final double quantity;
+  final double packagePrice;
+}
+
+/// Dialog owns the controllers for its FULL route lifecycle, including
+/// the dismiss animation. It returns a value instead of touching StudioStore.
+class MaterialEditDialog extends StatefulWidget {
+  const MaterialEditDialog({super.key, required this.material});
+  final Material material;
+  @override
+  State<MaterialEditDialog> createState() => _MaterialEditDialogState();
+}
+
+class _MaterialEditDialogState extends State<MaterialEditDialog> {
+  late final TextEditingController _quantity;
+  late final TextEditingController _price;
+
+  @override
+  void initState() {
+    super.initState();
+    _quantity = TextEditingController(text: widget.material.quantity.toString());
+    _price = TextEditingController(
+      text: (widget.material.unitCost * widget.material.packUnits).toStringAsFixed(3));
   }
+
+  @override
+  void dispose() {
+    _quantity.dispose();
+    _price.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final q = double.tryParse(_quantity.text.trim());
+    final c = double.tryParse(_price.text.trim());
+    if (q == null || c == null || !q.isFinite || !c.isFinite || q < 0 || c < 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('راجع الكمية والسعر')));
+      return;
+    }
+    Navigator.of(context).pop(MaterialEditResult(q, c));
+  }
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.rtl,
+    child: AlertDialog(
+      title: Text('تعديل ${widget.material.name}'),
+      content: SizedBox(width: 400,
+        child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          _field('الكمية الحالية (${widget.material.unit})', _quantity, numeric: true),
+          _field('سعر اللوح/الرول/العبوة', _price, numeric: true),
+        ]))),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
+        FilledButton(onPressed: _submit, child: const Text('حفظ')),
+      ],
+    ),
+  );
+}
+
+class MaterialAddDialog extends StatefulWidget {
+  const MaterialAddDialog({super.key});
+  @override
+  State<MaterialAddDialog> createState() => _MaterialAddDialogState();
+}
+
+class _MaterialAddDialogState extends State<MaterialAddDialog> {
+  final _formKey = GlobalKey<FormState>();
+  final _name = TextEditingController();
+  final _qty = TextEditingController(text: '0');
+  final _limit = TextEditingController(text: '0');
+  final _packCount = TextEditingController(text: '1');
+  final _lengthCm = TextEditingController(text: '120');
+  final _widthCm = TextEditingController(text: '80');
+  final _rollMeters = TextEditingController(text: '10');
+  final _packCost = TextEditingController(text: '0');
+  String _unit = 'قطعة';
+  String _category = 'خشب';
+
+  @override
+  void dispose() {
+    for (final c in [_name, _qty, _limit, _packCount, _lengthCm, _widthCm, _rollMeters, _packCost]) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _submit() {
+    if (!_formKey.currentState!.validate()) return;
+    final packs = double.tryParse(_qty.text.trim()) ?? -1;
+    final limit = double.tryParse(_limit.text.trim()) ?? -1;
+    final price = double.tryParse(_packCost.text.trim()) ?? -1;
+    final count = _unit == 'سم²'
+      ? (double.tryParse(_lengthCm.text.trim()) ?? 0) *
+        (double.tryParse(_widthCm.text.trim()) ?? 0)
+      : _unit == 'سم'
+        ? (double.tryParse(_rollMeters.text.trim()) ?? 0) * 100
+        : double.tryParse(_packCount.text.trim()) ?? -1;
+    if (!packs.isFinite || !limit.isFinite || !price.isFinite ||
+        !count.isFinite || packs < 0 || limit < 0 || price < 0 || count <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('راجع القياسات والكمية والسعر')));
+      return;
+    }
+    final material = Material(
+      id: const Uuid().v4(),
+      name: _name.text.trim(),
+      quantity: packs * count,
+      unit: _unit,
+      category: _category,
+      reorderLevel: limit,
+      unitCost: price / count,
+      packUnits: count,
+    );
+    Navigator.of(context).pop(material);
+  }
+
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.rtl,
+    child: AlertDialog(
+      title: const Text('مادة جديدة'),
+      content: SizedBox(width: 440,
+        child: Form(key: _formKey,
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            _field('اسم المادة (مثل خشب MDF 3mm)', _name, required: true),
+            DropdownButtonFormField<String>(
+              initialValue: _category,
+              decoration: const InputDecoration(labelText: 'نوع المادة'),
+              items: ['خشب', 'أكريليك', 'تغليف', 'لاصق', 'دهان', 'أخرى']
+                .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+              onChanged: (v) { if (v != null) setState(() => _category = v); },
+            ),
+            const SizedBox(height: 10),
+            DropdownButtonFormField<String>(
+              initialValue: _unit,
+              decoration: const InputDecoration(labelText: 'وحدة حساب الاستخدام'),
+              items: ['قطعة', 'سم²', 'سم', 'متر', 'غرام', 'مل']
+                .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+              onChanged: (v) { if (v != null) setState(() => _unit = v); },
+            ),
+            const SizedBox(height: 10),
+            _field('عدد الألواح أو الرولات أو العبوات الموجودة', _qty, numeric: true, required: true),
+            _field('حد تنبيه النقص ($_unit)', _limit, numeric: true, required: true),
+            if (_unit == 'سم²') ...[
+              _field('طول اللوح (سم)', _lengthCm, numeric: true, required: true),
+              _field('عرض اللوح (سم)', _widthCm, numeric: true, required: true),
+            ] else if (_unit == 'سم')
+              _field('طول الرول (متر)', _rollMeters, numeric: true, required: true)
+            else
+              _field('كم $_unit بالعبوة الواحدة؟', _packCount, numeric: true, required: true),
+            _field('سعر اللوح أو الرول أو العبوة بالدولار', _packCost, numeric: true, required: true),
+            const Text('البرنامج بيحوّل قياس اللوح للمساحة، وطول الرول للسنتيمتر، وبيحسب تكلفة الجزء المستخدم تلقائياً.',
+              style: TextStyle(fontSize: 12, color: Colors.white70)),
+          ])))),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('إلغاء')),
+        FilledButton(onPressed: _submit, child: const Text('حفظ المادة')),
+      ],
+    ),
+  );
 }
 
 class AccountsPage extends StatelessWidget {
