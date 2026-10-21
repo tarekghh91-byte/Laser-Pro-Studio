@@ -7,6 +7,13 @@ on:
       - 'lib/**'
       - 'pubspec.yaml'
   workflow_dispatch:
+  pull_request:
+    branches: [main]
+    paths:
+      - '.github/workflows/build-android-light.yml'
+      - 'lib/**'
+      - 'pubspec.yaml'
+      - 'test/**'
 
 permissions:
   contents: read
@@ -30,7 +37,7 @@ jobs:
           channel: stable
           cache: true
       - name: Generate Android app
-        run: flutter create --org com.laserpro --project-name laser_pro_studio --platforms=android .
+        run: flutter create --org com.laserpro.recovery --project-name laser_pro_studio --platforms=android .
       - name: Enable network access and remove generated counter test
         run: |
           python3 - <<'PY'
@@ -47,6 +54,8 @@ jobs:
         run: flutter pub get
       - name: Check compilation
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Test inventory modal lifecycle
+        run: flutter test test/inventory_dialog_test.dart
       - name: Build compact ARM64 APK
         run: flutter build apk --release --target-platform android-arm64
       - name: Verify APK is a zip archive
