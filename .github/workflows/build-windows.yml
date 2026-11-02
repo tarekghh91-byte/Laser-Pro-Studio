@@ -25,6 +25,8 @@ jobs:
           cache: true
       - name: Generate Windows runner
         run: flutter create --project-name laser_pro_studio --platforms=windows .
+      - name: Remove generated counter test
+        run: Remove-Item test/widget_test.dart -ErrorAction SilentlyContinue
       - name: Get dependencies
         run: flutter pub get
       - name: Analyze Dart sources
