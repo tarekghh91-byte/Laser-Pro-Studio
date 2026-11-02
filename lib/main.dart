@@ -855,28 +855,36 @@ class InventoryPage extends StatelessWidget {
           }),
       ]),
       onTap: () async {
+        final name = TextEditingController(text: m.name);
         final input = TextEditingController(text: m.quantity.toString());
+        final limit = TextEditingController(text: m.reorderLevel.toString());
         final price = TextEditingController(text: (m.unitCost * m.packUnits).toStringAsFixed(3));
-        final value = await showDialog<List<double>>(context: context,
-          builder: (ctx) => AlertDialog(title: Text('تعديل ${m.name}'),
-            content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        final value = await showDialog<List<String>>(context: context,
+          builder: (ctx) => AlertDialog(title: Text('تفاصيل وتعديل · ${m.name}'),
+            content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _field('اسم المادة', name, required: true),
               _field('الكمية الحالية (${m.unit})', input, numeric: true),
+              _field('حد تنبيه النقص (${m.unit})', limit, numeric: true),
               _field('سعر اللوح/الرول/العبوة', price, numeric: true),
-            ])),
+              Align(alignment: Alignment.centerRight, child: Text('التصنيف: ${m.category} · وحدة القياس: ${m.unit}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12))),
+            ]))),
             actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
               FilledButton(onPressed: () {
-                final n = double.tryParse(input.text);
-                final c = double.tryParse(price.text);
-                if (n != null && c != null && n.isFinite && c.isFinite && n >= 0 && c >= 0) {
-                  Navigator.pop(ctx, [n, c]);
+                final n = double.tryParse(input.text), l = double.tryParse(limit.text), c = double.tryParse(price.text);
+                if (name.text.trim().isNotEmpty && n != null && l != null && c != null &&
+                    n.isFinite && l.isFinite && c.isFinite && n >= 0 && l >= 0 && c >= 0) {
+                  Navigator.pop(ctx, [name.text.trim(), n.toString(), l.toString(), c.toString()]);
                 }
-              }, child: const Text('حفظ'))]));
+              }, child: const Text('حفظ التعديلات'))]));
         if (value != null) {
-          m.quantity = value[0];
-          m.unitCost = value[1] / m.packUnits;
+          m.name = value[0];
+          m.quantity = double.parse(value[1]);
+          m.reorderLevel = double.parse(value[2]);
+          m.unitCost = double.parse(value[3]) / m.packUnits;
           await store.updateMaterial(m);
         }
-        input.dispose(); price.dispose();
+        name.dispose(); input.dispose(); limit.dispose(); price.dispose();
       }))),
     const SizedBox(height: 18),
     const Text('بتختار المواد داخل الطلب. عند تأكيد استهلاكها بتنخصم من المخزون مرة واحدة فقط.',
