@@ -419,6 +419,15 @@ String _normalizeArabic(String value) => value.toLowerCase()
   .replaceAll('ة','ه').replaceAll('ى','ي').replaceAll('ؤ','و')
   .replaceAll('ئ','ي').replaceAll(RegExp(r'[ًٌٍَُِّْـ]'), '').trim();
 
+String _cleanCommand(String value) {
+  var q = _normalizeArabic(value);
+  for (final word in ['ورجيني', 'جيبلي', 'ابحث عن', 'دور على', 'وين', 'اعرض',
+    'الطلبات', 'طلبات', 'الطلب', 'طلب', 'الزبون', 'العميل', 'اسم']) {
+    q = q.replaceAll(word, ' ');
+  }
+  return q.replaceAll(RegExp(r'\\s+'), ' ').trim();
+}
+
 class SearchPage extends StatelessWidget {
   const SearchPage({super.key, required this.store, required this.query,
     required this.onOrders, required this.onInventory});
@@ -426,8 +435,7 @@ class SearchPage extends StatelessWidget {
   final String query;
   final VoidCallback onOrders, onInventory;
   @override Widget build(BuildContext context) {
-    final q = _normalizeArabic(query).replaceAll(
-      RegExp(r'\\b(وين|اعرض|ورجيني|جيبلي|ابحث عن|دور على|الطلب|طلبات|طلب|الزبون|العميل|اسم)\\b'), '').trim();
+    final q = _cleanCommand(query);
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final commandReady = q.contains('جاهز') || q.contains('جاهزه');
