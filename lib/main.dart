@@ -620,13 +620,15 @@ class OrderTile extends StatelessWidget {
             const SizedBox(height: 15),
             if (!order.inventoryDeducted && order.usedMaterials.isNotEmpty)
               FilledButton.tonalIcon(icon: const Icon(Icons.inventory_outlined),
-                label: const Text('تأكيد استهلاك المواد وخصمها'),
+                label: const Text('تأكيد الجاهزية وخصم المواد'),
                 onPressed: () async {
                   final message = await store.confirmMaterialUsage(order);
                   if (!context.mounted) return;
                   if (message != null) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
                   } else {
+                    order.status = 'جاهز';
+                    await store.updateOrder(order);
                     Navigator.pop(context);
                   }
                 }),
@@ -635,7 +637,29 @@ class OrderTile extends StatelessWidget {
               decoration: const InputDecoration(labelText: 'حالة الطلب'),
               items: ['جديد', 'قيد التنفيذ', 'جاهز', 'تم التسليم']
                 .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) async { if (v != null) { order.status = v; await store.updateOrder(order); } }),
+              onChanged: (v) async {
+                if (v == null || v == order.status) return;
+                if (v == 'جاهز') {
+                  if (order.usedMaterials.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('افتح تعديل الطلب وسجّل الخشب والمواد والتغليف قبل تأكيد الجاهزية.')));
+                    return;
+                  }
+                  final message = await store.confirmMaterialUsage(order);
+                  if (message != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+                    return;
+                  }
+                }
+                if (v == 'تم التسليم' && (order.status != 'جاهز' || !order.inventoryDeducted)) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('يجب تأكيد الجاهزية وخصم المواد أولاً، ثم تسجيل التسليم.')));
+                  return;
+                }
+                order.status = v;
+                await store.updateOrder(order);
+              }),
+
             const SizedBox(height: 10),
             FilledButton(onPressed: () async {
               final controller = TextEditingController(text: order.paid.toStringAsFixed(2));
@@ -819,8 +843,8 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
               final a = double.tryParse(paid.text) ?? -1;
               final duration = double.tryParse(laserMinutes.text) ?? -1;
               final qty = int.tryParse(quantity.text) ?? 0;
-              if (p < 0 || a < 0 || a > p || duration < 0 || !duration.isFinite || qty < 1 || used.isEmpty) {
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر والدفعة ودقائق الليزر، ولازم تختار مادة على الأقل')));
+              if (p < 0 || a < 0 || a > p || duration < 0 || !duration.isFinite || qty < 1) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر والدفعة والكمية ودقائق الليزر')));
                 return;
               }
               try {
@@ -831,7 +855,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
                     dueDate: due, price: p, paid: a, materialCost: materialCost,
                     usedMaterials: List.of(used), laserMinutes: duration,
                     electricCost: laserElectricity(duration),
-                    status: 'جديد', createdAt: DateTime.now(), notes: notes.text.trim()));
+                    status: 'قيد التنفيذ', createdAt: DateTime.now(), notes: notes.text.trim()));
                 } else {
                   existing.customer = customer.text.trim();
                   existing.phone = phone.text.trim(); existing.address = address.text.trim();
