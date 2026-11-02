@@ -316,7 +316,7 @@ class StudioStore extends ChangeNotifier {
       }
       final remoteMaterials = await _cloud.list('materials');
       for (final r in remoteMaterials) {
-        if (r.payload['_deleted'] == true) { materials.removeWhere((m) => m.id == r.id); continue; }
+        if (r.payload['_deleted'] == true) { materials.removeWhere((m) => m.id == r.id); _pendingMaterials.remove(r.id); _deletedMaterials.remove(r.id); _materialVersions[r.id] = r.version; continue; }
         if (_pendingMaterials.contains(r.id) || _deletedMaterials.contains(r.id)) continue;
         final idx = materials.indexWhere((m) => m.id == r.id);
         final item = Material.fromJson(r.payload);
@@ -325,7 +325,7 @@ class StudioStore extends ChangeNotifier {
       }
       final remoteOrders = await _cloud.list('orders');
       for (final r in remoteOrders) {
-        if (r.payload['_deleted'] == true) { orders.removeWhere((o) => o.id == r.id); continue; }
+        if (r.payload['_deleted'] == true) { orders.removeWhere((o) => o.id == r.id); _pendingOrders.remove(r.id); _deletedOrders.remove(r.id); _orderVersions[r.id] = r.version; continue; }
         if (_pendingOrders.contains(r.id) || _deletedOrders.contains(r.id)) continue;
         final idx = orders.indexWhere((o) => o.id == r.id);
         final item = Order.fromJson(r.payload);
