@@ -222,7 +222,7 @@ class WorkspaceHeader extends StatelessWidget {
         child: Icon(Icons.auto_awesome, color: gold, size: 20)),
       Expanded(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 580),
         child: TextField(onChanged: onSearch, textInputAction: TextInputAction.search,
-          decoration: InputDecoration(hintText: 'ابحث عن طلب، زبون، منتج أو مادة...',
+          decoration: InputDecoration(hintText: 'اكتب بطريقتك: شو لازم سلّم؟ شو ناقص؟ وين طلب فلان؟',
             prefixIcon: const Icon(Icons.search_rounded, color: gold),
             suffixIcon: query.isEmpty ? null : IconButton(onPressed: () => onSearch(''),
               icon: const Icon(Icons.close_rounded)),
