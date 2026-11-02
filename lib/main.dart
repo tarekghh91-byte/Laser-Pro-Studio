@@ -533,11 +533,31 @@ class OrdersPage extends StatelessWidget {
   const OrdersPage({super.key, required this.store, required this.newOrder});
   final StudioStore store;
   final VoidCallback newOrder;
-  @override Widget build(BuildContext context) => content([
-    section('طلباتي (${store.orders.length})', store.orders.isEmpty
-      ? const Text('ما عندك طلبات بعد. اضغط "طلب جديد" للبدء.')
-      : Column(children: [...store.orders.reversed.map((o) => OrderTile(order: o, store: store))])),
-  ]);
+  @override Widget build(BuildContext context) {
+    final active = store.orders.where((o) => o.status == 'جديد' || o.status == 'قيد التنفيذ').toList()
+      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    final ready = store.orders.where((o) => o.status == 'جاهز').toList()
+      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    final delivered = store.orders.where((o) => o.status == 'تم التسليم').toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return content([
+      Row(children: [Expanded(child: Text('مركز الطلبات · ${store.orders.length}',
+        style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold))),
+        FilledButton.icon(onPressed: newOrder, icon: const Icon(Icons.add), label: const Text('طلب جديد'))]),
+      const SizedBox(height: 15),
+      section('قيد التحضير والتنفيذ · ${active.length}', active.isEmpty
+        ? const Text('لا توجد طلبات في هذه المرحلة.')
+        : Column(children: active.map((o) => OrderTile(order: o, store: store)).toList())),
+      const SizedBox(height: 16),
+      section('جاهزة بانتظار التسليم · ${ready.length}', ready.isEmpty
+        ? const Text('لا توجد طلبات جاهزة حالياً.')
+        : Column(children: ready.map((o) => OrderTile(order: o, store: store)).toList())),
+      const SizedBox(height: 16),
+      section('تم التسليم · ${delivered.length}', delivered.isEmpty
+        ? const Text('لا توجد طلبات مسلّمة بعد.')
+        : Column(children: delivered.map((o) => OrderTile(order: o, store: store)).toList())),
+    ]);
+  }
 }
 class OrderTile extends StatelessWidget {
   const OrderTile({super.key, required this.order, required this.store});
