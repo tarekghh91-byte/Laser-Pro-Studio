@@ -951,9 +951,11 @@ class AccountsPage extends StatelessWidget {
   const AccountsPage({super.key, required this.store});
   final StudioStore store;
   @override Widget build(BuildContext context) {
-    final sales = store.orders.fold<double>(0, (v, o) => v + o.price);
-    final paid = store.orders.fold<double>(0, (v, o) => v + o.paid);
-    final costs = store.orders.fold<double>(0, (v, o) => v + o.totalCost);
+    // Only completed handoffs count as realized sales and profit.
+    final completed = store.orders.where((o) => o.status == 'تم التسليم').toList();
+    final sales = completed.fold<double>(0, (v, o) => v + o.price);
+    final paid = completed.fold<double>(0, (v, o) => v + o.paid);
+    final costs = completed.fold<double>(0, (v, o) => v + o.totalCost);
     return content([
       const Text('الحسابات', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
       const SizedBox(height: 18),
@@ -962,7 +964,7 @@ class AccountsPage extends StatelessWidget {
       _accountCard('المواد والتغليف وكهرباء الليزر', costs),
       _accountCard('ربح الطلبات بعد التكاليف المباشرة', sales - costs),
       const SizedBox(height: 15),
-      const Text('الربح هون بعد المواد والتغليف وكهرباء الليزر، وقبل المصاريف العامة. بلا حساب أجرة ساعات شغلك.',
+      Text('المحتسب هنا فقط الطلبات التي حالتها «تم التسليم» (${completed.length} طلب). الربح بعد المواد والتغليف وكهرباء الليزر، وقبل المصاريف العامة وأجرة وقت العمل.',
         style: TextStyle(color: Colors.white70)),
     ]);
   }
