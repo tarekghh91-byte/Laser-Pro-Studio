@@ -777,11 +777,14 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(money(e.value.cost), style: const TextStyle(color: gold)),
                 IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => setForm(() => used.removeAt(e.key))),
+                  onPressed: existing?.inventoryDeducted == true ? null : () => setForm(() => used.removeAt(e.key))),
               ]))),
+            if (existing?.inventoryDeducted == true)
+              const Text('تم خصم هذه المواد من المخزون؛ تعديل قائمة المواد مقفول حتى لا تختل الكميات. يمكنك تعديل بقية بيانات الطلب.',
+                style: TextStyle(color: Colors.orangeAccent, fontSize: 11)),
             OutlinedButton.icon(icon: const Icon(Icons.add),
               label: const Text('إضافة مادة من المخزون'),
-              onPressed: () async {
+              onPressed: existing?.inventoryDeducted == true ? null : () async {
                 final line = await chooseUsedMaterial(ctx, store);
                 if (line != null) setForm(() => used.add(line));
               }),
