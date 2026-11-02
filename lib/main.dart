@@ -56,9 +56,10 @@ class Order {
   Order({required this.id, required this.customer, required this.product,
     required this.dueDate, required this.price, required this.paid,
     required this.materialCost, required this.status, required this.createdAt,
-    this.notes = '', List<UsedMaterial>? usedMaterials,
+    this.notes = '', this.phone = '', this.address = '', this.quantity = 1,
+    DateTime? orderDate, List<UsedMaterial>? usedMaterials,
     this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
-      : usedMaterials = usedMaterials ?? [];
+      : orderDate = orderDate ?? createdAt, usedMaterials = usedMaterials ?? [];
   final String id;
   String customer;
   String product;
@@ -69,6 +70,10 @@ class Order {
   String status;
   DateTime createdAt;
   String notes;
+  String phone;
+  String address;
+  int quantity;
+  DateTime orderDate;
   List<UsedMaterial> usedMaterials;
   double laserMinutes;
   double electricCost;
@@ -81,6 +86,8 @@ class Order {
     'dueDate': dueDate.toIso8601String(), 'price': price, 'paid': paid,
     'materialCost': materialCost, 'status': status,
     'createdAt': createdAt.toIso8601String(), 'notes': notes,
+    'phone': phone, 'address': address, 'quantity': quantity,
+    'orderDate': orderDate.toIso8601String(),
     'usedMaterials': usedMaterials.map((e) => e.toJson()).toList(),
     'laserMinutes': laserMinutes, 'electricCost': electricCost,
     'inventoryDeducted': inventoryDeducted,
@@ -95,6 +102,9 @@ class Order {
     status: j['status'] as String,
     createdAt: DateTime.parse(j['createdAt'] as String),
     notes: j['notes'] as String? ?? '',
+    phone: j['phone'] as String? ?? '', address: j['address'] as String? ?? '',
+    quantity: (j['quantity'] as num? ?? 1).toInt(),
+    orderDate: DateTime.tryParse(j['orderDate'] as String? ?? '') ?? DateTime.parse(j['createdAt'] as String),
     usedMaterials: (j['usedMaterials'] as List<dynamic>? ?? [])
       .map((e) => UsedMaterial.fromJson(e as Map<String, dynamic>)).toList(),
     laserMinutes: (j['laserMinutes'] as num? ?? 0).toDouble(),
@@ -573,7 +583,10 @@ class OrderTile extends StatelessWidget {
         width: 450, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('المنتج: ${order.product}'),
+            Text('المنتج: ${order.product} · الكمية: ${order.quantity}'),
+            if (order.phone.isNotEmpty) Text('الهاتف: ${order.phone}'),
+            if (order.address.isNotEmpty) Text('العنوان: ${order.address}'),
+            Text('تاريخ الطلب: ${date(order.orderDate)}'),
             Text('التسليم: ${date(order.dueDate)}'),
             Text('السعر: ${money(order.price)}'),
             Text('المقبوض: ${money(order.paid)}'),
@@ -714,6 +727,9 @@ Widget costLine(String title, double value, {bool bold = false}) => Padding(
 
 Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? existing}) async {
   final customer = TextEditingController(text: existing?.customer ?? '');
+  final phone = TextEditingController(text: existing?.phone ?? '');
+  final address = TextEditingController(text: existing?.address ?? '');
+  final quantity = TextEditingController(text: existing?.quantity.toString() ?? '1');
   final product = TextEditingController(text: existing?.product ?? '');
   final price = TextEditingController(text: existing?.price.toStringAsFixed(2) ?? '');
   final paid = TextEditingController(text: existing?.paid.toStringAsFixed(2) ?? '0');
@@ -721,6 +737,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
   final used = List<UsedMaterial>.of(existing?.usedMaterials ?? const <UsedMaterial>[]);
   final notes = TextEditingController(text: existing?.notes ?? '');
   DateTime due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 3));
+  DateTime orderDate = existing?.orderDate ?? DateTime.now();
   final key = GlobalKey<FormState>();
   await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
     builder: (ctx, setForm) {
@@ -733,7 +750,16 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
         child: Form(key: key, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, children: [
             _field('اسم الزبون', customer, required: true),
-            _field('اسم المنتج', product, required: true),
+            _field('رقم الهاتف', phone, numeric: false),
+            _field('العنوان', address),
+            _field('نوع الطلب / المنتج', product, required: true),
+            _field('الكمية', quantity, numeric: true, required: true),
+            ListTile(title: const Text('تاريخ الطلب'), subtitle: Text(date(orderDate)),
+              trailing: const Icon(Icons.event), onTap: () async {
+                final value = await showDatePicker(context: ctx, initialDate: orderDate,
+                  firstDate: DateTime(2020), lastDate: DateTime(2100));
+                if (value != null) setForm(() => orderDate = value);
+              }),
             TextFormField(controller: price,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               decoration: const InputDecoration(labelText: 'سعر البيع بالدولار'),
@@ -789,7 +815,8 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
               final p = double.tryParse(price.text) ?? -1;
               final a = double.tryParse(paid.text) ?? -1;
               final duration = double.tryParse(laserMinutes.text) ?? -1;
-              if (p < 0 || a < 0 || a > p || duration < 0 || !duration.isFinite || used.isEmpty) {
+              final qty = int.tryParse(quantity.text) ?? 0;
+              if (p < 0 || a < 0 || a > p || duration < 0 || !duration.isFinite || qty < 1 || used.isEmpty) {
                 ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر والدفعة ودقائق الليزر، ولازم تختار مادة على الأقل')));
                 return;
               }
@@ -797,12 +824,15 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
                 if (existing == null) {
                   await store.addOrder(Order(id: const Uuid().v4(),
                     customer: customer.text.trim(), product: product.text.trim(),
+                    phone: phone.text.trim(), address: address.text.trim(), quantity: qty, orderDate: orderDate,
                     dueDate: due, price: p, paid: a, materialCost: materialCost,
                     usedMaterials: List.of(used), laserMinutes: duration,
                     electricCost: laserElectricity(duration),
                     status: 'جديد', createdAt: DateTime.now(), notes: notes.text.trim()));
                 } else {
                   existing.customer = customer.text.trim();
+                  existing.phone = phone.text.trim(); existing.address = address.text.trim();
+                  existing.quantity = qty; existing.orderDate = orderDate;
                   existing.product = product.text.trim();
                   existing.dueDate = due;
                   existing.price = p;
@@ -819,7 +849,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
             }, child: const Text('حفظ الطلب')),
           ]));
     }));
-  for (final c in [customer, product, price, paid, laserMinutes, notes]) { c.dispose(); }
+  for (final c in [customer, phone, address, quantity, product, price, paid, laserMinutes, notes]) { c.dispose(); }
 }
 Widget _field(String label, TextEditingController controller,
     {bool numeric = false, bool required = false}) => Padding(
