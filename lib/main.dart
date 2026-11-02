@@ -572,6 +572,18 @@ class OrderTile extends StatelessWidget {
             Text(order.inventoryDeducted ? 'المواد انخصمت من المخزون' : 'المواد مش مخصومة من المخزون بعد',
               style: TextStyle(color: order.inventoryDeducted ? Colors.greenAccent : Colors.orangeAccent)),
             if (order.notes.isNotEmpty) Text('ملاحظات: ${order.notes}'),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(onPressed: () { Navigator.pop(context); showOrderForm(context, store, existing: order); },
+              icon: const Icon(Icons.edit_outlined), label: const Text('تعديل بيانات الطلب')),
+            OutlinedButton.icon(style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
+              onPressed: () async {
+                final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+                  title: const Text('حذف الطلب؟'),
+                  content: const Text('سيُحذف من قائمة العمل. إذا كانت مواده قد خُصمت، سيُعاد رصيدها للمخزون. سيُسجّل الحذف للمزامنة مع أجهزتك.'),
+                  actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تأكيد الحذف'))]));
+                if (ok == true) { await store.deleteOrder(order); if (context.mounted) Navigator.pop(context); }
+              }, icon: const Icon(Icons.delete_outline), label: const Text('حذف الطلب')),
             const SizedBox(height: 15),
             if (!order.inventoryDeducted && order.usedMaterials.isNotEmpty)
               FilledButton.tonalIcon(icon: const Icon(Icons.inventory_outlined),
@@ -680,15 +692,15 @@ Widget costLine(String title, double value, {bool bold = false}) => Padding(
       fontWeight: bold ? FontWeight.w700 : FontWeight.normal)),
   ]));
 
-Future<void> showOrderForm(BuildContext context, StudioStore store) async {
-  final customer = TextEditingController();
-  final product = TextEditingController();
-  final price = TextEditingController();
-  final paid = TextEditingController(text: '0');
-  final laserMinutes = TextEditingController(text: '0');
-  final used = <UsedMaterial>[];
-  final notes = TextEditingController();
-  DateTime due = DateTime.now().add(const Duration(days: 3));
+Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? existing}) async {
+  final customer = TextEditingController(text: existing?.customer ?? '');
+  final product = TextEditingController(text: existing?.product ?? '');
+  final price = TextEditingController(text: existing?.price.toStringAsFixed(2) ?? '');
+  final paid = TextEditingController(text: existing?.paid.toStringAsFixed(2) ?? '0');
+  final laserMinutes = TextEditingController(text: existing?.laserMinutes.toStringAsFixed(0) ?? '0');
+  final used = List<UsedMaterial>.of(existing?.usedMaterials ?? const <UsedMaterial>[]);
+  final notes = TextEditingController(text: existing?.notes ?? '');
+  DateTime due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 3));
   final key = GlobalKey<FormState>();
   await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
     builder: (ctx, setForm) {
@@ -697,7 +709,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store) async {
       final electricity = laserElectricity(minutes);
       final priceValue = double.tryParse(price.text) ?? 0;
       return Directionality(textDirection: TextDirection.rtl,
-      child: AlertDialog(title: const Text('طلب جديد'), content: SizedBox(width: 480,
+      child: AlertDialog(title: Text(existing == null ? 'طلب جديد' : 'تعديل الطلب ${existing.id}'), content: SizedBox(width: 480,
         child: Form(key: key, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, children: [
             _field('اسم الزبون', customer, required: true),
@@ -762,12 +774,26 @@ Future<void> showOrderForm(BuildContext context, StudioStore store) async {
                 return;
               }
               try {
-                await store.addOrder(Order(id: const Uuid().v4(),
-                  customer: customer.text.trim(), product: product.text.trim(),
-                  dueDate: due, price: p, paid: a, materialCost: materialCost,
-                  usedMaterials: List.of(used), laserMinutes: duration,
-                  electricCost: laserElectricity(duration),
-                  status: 'جديد', createdAt: DateTime.now(), notes: notes.text.trim()));
+                if (existing == null) {
+                  await store.addOrder(Order(id: const Uuid().v4(),
+                    customer: customer.text.trim(), product: product.text.trim(),
+                    dueDate: due, price: p, paid: a, materialCost: materialCost,
+                    usedMaterials: List.of(used), laserMinutes: duration,
+                    electricCost: laserElectricity(duration),
+                    status: 'جديد', createdAt: DateTime.now(), notes: notes.text.trim()));
+                } else {
+                  existing.customer = customer.text.trim();
+                  existing.product = product.text.trim();
+                  existing.dueDate = due;
+                  existing.price = p;
+                  existing.paid = a;
+                  existing.materialCost = materialCost;
+                  existing.usedMaterials = List.of(used);
+                  existing.laserMinutes = duration;
+                  existing.electricCost = laserElectricity(duration);
+                  existing.notes = notes.text.trim();
+                  await store.updateOrder(existing);
+                }
                 if (ctx.mounted) Navigator.pop(ctx);
               } catch (e) { if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('فشل الحفظ: $e'))); }
             }, child: const Text('حفظ الطلب')),
