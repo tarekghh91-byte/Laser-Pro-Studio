@@ -2,6 +2,12 @@ name: Windows app (test build)
 
 on:
   workflow_dispatch:
+  push:
+    branches: [main, "design/**"]
+    paths:
+      - '.github/workflows/build-windows.yml'
+      - 'lib/**'
+      - 'pubspec.yaml'
 
 permissions:
   contents: read
@@ -21,18 +27,20 @@ jobs:
         run: flutter create --project-name laser_pro_studio --platforms=windows .
       - name: Get dependencies
         run: flutter pub get
-      - name: Build Windows
-        run: flutter build windows --release
+      - name: Analyze Dart sources
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings
+      - name: Build premium Windows app
+        run: flutter build windows --release -t lib/main_premium.dart
       - name: Zip entire Windows distribution
         shell: pwsh
         run: |
           $source = "build/windows/x64/runner/Release"
           if (!(Test-Path $source)) { throw "Windows release build directory missing" }
-          Compress-Archive -Path "$source/*" -DestinationPath "Laser-Pro-Studio-Windows-TEST.zip"
+          Compress-Archive -Path "$source/*" -DestinationPath "Laser-Studio-Pro-Premium-Windows-TEST.zip"
       - name: Upload Windows build
         uses: actions/upload-artifact@v4
         with:
-          name: Laser-Pro-Studio-Windows-TEST
-          path: Laser-Pro-Studio-Windows-TEST.zip
+          name: LaserStudioPro-Premium-Windows-TEST
+          path: Laser-Studio-Pro-Premium-Windows-TEST.zip
           retention-days: 14
           if-no-files-found: error
