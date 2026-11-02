@@ -414,6 +414,11 @@ class EmptyState extends StatelessWidget {
       const SizedBox(width: 8), Expanded(child: Text(label, style: const TextStyle(color: muted, fontSize: 11)))]));
 }
 
+String _normalizeArabic(String value) => value.toLowerCase()
+  .replaceAll('أ','ا').replaceAll('إ','ا').replaceAll('آ','ا')
+  .replaceAll('ة','ه').replaceAll('ى','ي').replaceAll('ؤ','و')
+  .replaceAll('ئ','ي').replaceAll(RegExp(r'[ًٌٍَُِّْـ]'), '').trim();
+
 class SearchPage extends StatelessWidget {
   const SearchPage({super.key, required this.store, required this.query,
     required this.onOrders, required this.onInventory});
@@ -421,15 +426,33 @@ class SearchPage extends StatelessWidget {
   final String query;
   final VoidCallback onOrders, onInventory;
   @override Widget build(BuildContext context) {
-    final q = query.toLowerCase();
-    final orders = store.orders.where((o) => o.customer.toLowerCase().contains(q) ||
-      o.product.toLowerCase().contains(q) || o.id.toLowerCase().contains(q)).toList();
-    final materials = store.materials.where((m) => m.name.toLowerCase().contains(q) ||
-      m.category.toLowerCase().contains(q)).toList();
+    final q = _normalizeArabic(query);
+    final today = DateTime.now();
+    final todayOnly = DateTime(today.year, today.month, today.day);
+    final commandReady = q.contains('جاهز') || q.contains('جاهزه');
+    final commandActive = q.contains('قيد التنفيذ') || q.contains('عم ينفذ') || q.contains('شغال');
+    final commandDelivered = q.contains('تم التسليم') || q.contains('تسلم') || q.contains('مستلم');
+    final commandLate = q.contains('متاخر') || q.contains('تاخر');
+    final commandDue = q.contains('لازم سلم') || q.contains('تسليم اليوم') || q.contains('موعد');
+    final commandStock = q.contains('مخزون') || q.contains('مواد') || q.contains('ناقص') || q.contains('اشتري');
+    final orders = store.orders.where((o) {
+      if (commandReady) return o.status == 'جاهز';
+      if (commandActive) return o.status == 'قيد التنفيذ' || o.status == 'جديد';
+      if (commandDelivered) return o.status == 'تم التسليم';
+      if (commandLate) return o.status != 'تم التسليم' && o.dueDate.isBefore(todayOnly);
+      if (commandDue) return o.status != 'تم التسليم' && !o.dueDate.isAfter(todayOnly.add(const Duration(days: 1)));
+      return _normalizeArabic(o.customer).contains(q) || _normalizeArabic(o.product).contains(q) || o.id.toLowerCase().contains(q);
+    }).toList()..sort((a,b) => a.dueDate.compareTo(b.dueDate));
+    final materials = store.materials.where((m) => commandStock
+      ? (m.quantity <= m.reorderLevel || q.contains('مخزون') || q.contains('مواد'))
+      : _normalizeArabic(m.name).contains(q) || _normalizeArabic(m.category).contains(q)).toList();
+    final commandLabel = commandReady ? 'الطلبات الجاهزة' : commandActive ? 'الطلبات قيد التنفيذ'
+      : commandDelivered ? 'الطلبات المسلّمة' : commandLate ? 'الطلبات المتأخرة'
+      : commandDue ? 'التسليمات القريبة' : commandStock ? 'المخزون والمواد' : 'نتائج البحث';
     return ListView(padding: const EdgeInsets.all(20), children: [
-      const Text('نتائج البحث', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
+      Text(commandLabel, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
       const SizedBox(height: 5),
-      Text('نتائج مطابقة لعبارة «$query»', style: const TextStyle(color: muted)),
+      Text('فهمت طلبك: «$query»', style: const TextStyle(color: muted)),
       const SizedBox(height: 20),
       Text('الطلبات (${orders.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
       const SizedBox(height: 9),
