@@ -426,14 +426,15 @@ class SearchPage extends StatelessWidget {
   final String query;
   final VoidCallback onOrders, onInventory;
   @override Widget build(BuildContext context) {
-    final q = _normalizeArabic(query);
+    final q = _normalizeArabic(query).replaceAll(
+      RegExp(r'\\b(وين|اعرض|ورجيني|جيبلي|ابحث عن|دور على|الطلب|طلبات|طلب|الزبون|العميل|اسم)\\b'), '').trim();
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
     final commandReady = q.contains('جاهز') || q.contains('جاهزه');
     final commandActive = q.contains('قيد التنفيذ') || q.contains('عم ينفذ') || q.contains('شغال');
     final commandDelivered = q.contains('تم التسليم') || q.contains('تسلم') || q.contains('مستلم');
     final commandLate = q.contains('متاخر') || q.contains('تاخر');
-    final commandDue = q.contains('لازم سلم') || q.contains('تسليم اليوم') || q.contains('موعد');
+    final commandDue = q.contains('لازم سلم') || q.contains('تسليم اليوم') || q.contains('موعد') || q == 'اليوم';
     final commandStock = q.contains('مخزون') || q.contains('مواد') || q.contains('ناقص') || q.contains('اشتري');
     final orders = store.orders.where((o) {
       if (commandReady) return o.status == 'جاهز';
