@@ -822,7 +822,18 @@ class InventoryPage extends StatelessWidget {
     ...store.materials.map((m) => Card(child: ListTile(
       title: Text(m.name),
       subtitle: Text('${m.category} • ${m.quantity.toStringAsFixed(2)} ${m.unit} • سعر ${m.unit} ${m.unitCost.toStringAsFixed(6)} دولار'),
-      trailing: m.quantity <= m.reorderLevel ? const Icon(Icons.warning_amber, color: gold) : null,
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (m.quantity <= m.reorderLevel) const Icon(Icons.warning_amber, color: gold, size: 19),
+        IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          onPressed: () async {
+            final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+              title: const Text('حذف المادة من المخزون؟'),
+              content: Text('سيتم إخفاء «${m.name}» من قائمة المواد. تفاصيل استخدامها السابقة ستبقى محفوظة داخل الطلبات.'),
+              actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+                FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+            if (ok == true) await store.deleteMaterial(m);
+          }),
+      ]),
       onTap: () async {
         final input = TextEditingController(text: m.quantity.toString());
         final price = TextEditingController(text: (m.unitCost * m.packUnits).toStringAsFixed(3));
