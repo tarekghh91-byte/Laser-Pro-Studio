@@ -138,6 +138,8 @@ class StudioStore extends ChangeNotifier {
   final List<Material> materials = [];
   final Set<String> _pendingOrders = {};
   final Set<String> _pendingMaterials = {};
+  final Set<String> _deletedOrders = {};
+  final Set<String> _deletedMaterials = {};
   final Map<String, int> _orderVersions = {};
   final Map<String, int> _materialVersions = {};
   Timer? _syncTimer;
@@ -165,6 +167,8 @@ class StudioStore extends ChangeNotifier {
           (e) => Material.fromJson(Map<String, dynamic>.from(e as Map))));
         _pendingOrders.addAll(List<String>.from(raw['pendingOrders'] as List? ?? []));
         _pendingMaterials.addAll(List<String>.from(raw['pendingMaterials'] as List? ?? []));
+        _deletedOrders.addAll(List<String>.from(raw['deletedOrders'] as List? ?? []));
+        _deletedMaterials.addAll(List<String>.from(raw['deletedMaterials'] as List? ?? []));
         for (final entry in (raw['orderVersions'] as Map<String, dynamic>? ?? {}).entries) {
           _orderVersions[entry.key] = (entry.value as num).toInt();
         }
@@ -191,6 +195,8 @@ class StudioStore extends ChangeNotifier {
       'materials': materials.map((e) => e.toJson()).toList(),
       'pendingOrders': _pendingOrders.toList(),
       'pendingMaterials': _pendingMaterials.toList(),
+      'deletedOrders': _deletedOrders.toList(),
+      'deletedMaterials': _deletedMaterials.toList(),
       'orderVersions': _orderVersions,
       'materialVersions': _materialVersions,
     });
@@ -222,6 +228,35 @@ class StudioStore extends ChangeNotifier {
   Future<void> addMaterial(Material m) async { materials.add(m); await _save(materialId: m.id); }
   Future<void> updateMaterial(Material m) async => _save(materialId: m.id);
 
+  /// Soft-delete cloud records with tombstones so they do not reappear on another device.
+  Future<void> deleteOrder(Order order) async {
+    if (order.inventoryDeducted) {
+      for (final line in order.usedMaterials) {
+        final found = materials.where((m) => m.id == line.id);
+        if (found.isNotEmpty) found.first.quantity += line.amount;
+      }
+      order.inventoryDeducted = false;
+      for (final line in order.usedMaterials) {
+        if (materials.any((m) => m.id == line.id)) _pendingMaterials.add(line.id);
+      }
+    }
+    orders.removeWhere((o) => o.id == order.id);
+    _pendingOrders.remove(order.id);
+    _deletedOrders.add(order.id);
+    await _saveLocal();
+    _notify();
+    unawaited(syncNow());
+  }
+
+  Future<void> deleteMaterial(Material material) async {
+    materials.removeWhere((m) => m.id == material.id);
+    _pendingMaterials.remove(material.id);
+    _deletedMaterials.add(material.id);
+    await _saveLocal();
+    _notify();
+    unawaited(syncNow());
+  }
+
   /// Push locally edited records, then pull changes from the other device.
   /// Optimistic versions prevent the same item being silently overwritten.
   Future<void> syncNow() async {
@@ -231,6 +266,16 @@ class StudioStore extends ChangeNotifier {
     _notify();
     var conflict = false;
     try {
+      for (final id in _deletedMaterials.toList()) {
+        final version = await _cloud.put('materials', id, {'id': id, '_deleted': true}, _materialVersions[id] ?? 0);
+        _materialVersions[id] = version;
+        _deletedMaterials.remove(id);
+      }
+      for (final id in _deletedOrders.toList()) {
+        final version = await _cloud.put('orders', id, {'id': id, '_deleted': true}, _orderVersions[id] ?? 0);
+        _orderVersions[id] = version;
+        _deletedOrders.remove(id);
+      }
       for (final id in _pendingMaterials.toList()) {
         final matches = materials.where((m) => m.id == id);
         if (matches.isEmpty) continue;
@@ -261,7 +306,8 @@ class StudioStore extends ChangeNotifier {
       }
       final remoteMaterials = await _cloud.list('materials');
       for (final r in remoteMaterials) {
-        if (_pendingMaterials.contains(r.id)) continue;
+        if (r.payload['_deleted'] == true) { materials.removeWhere((m) => m.id == r.id); continue; }
+        if (_pendingMaterials.contains(r.id) || _deletedMaterials.contains(r.id)) continue;
         final idx = materials.indexWhere((m) => m.id == r.id);
         final item = Material.fromJson(r.payload);
         if (idx == -1) { materials.add(item); } else { materials[idx] = item; }
@@ -269,7 +315,8 @@ class StudioStore extends ChangeNotifier {
       }
       final remoteOrders = await _cloud.list('orders');
       for (final r in remoteOrders) {
-        if (_pendingOrders.contains(r.id)) continue;
+        if (r.payload['_deleted'] == true) { orders.removeWhere((o) => o.id == r.id); continue; }
+        if (_pendingOrders.contains(r.id) || _deletedOrders.contains(r.id)) continue;
         final idx = orders.indexWhere((o) => o.id == r.id);
         final item = Order.fromJson(r.payload);
         if (idx == -1) { orders.add(item); } else { orders[idx] = item; }
