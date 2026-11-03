@@ -289,12 +289,17 @@ class StudioStore extends ChangeNotifier {
   }
 
   Customer _ensureCustomer(Order order) {
-    if (order.customerId.isNotEmpty) {
-      final linked = customers.where((c) => c.id == order.customerId);
-      if (linked.isNotEmpty) return linked.first;
-    }
     final normalizedPhone = order.phone.replaceAll(RegExp(r'[^0-9+]'), '');
     final normalizedName = order.customer.trim().toLowerCase();
+    if (order.customerId.isNotEmpty) {
+      final linked = customers.where((c) => c.id == order.customerId);
+      if (linked.isNotEmpty) {
+        final linkedPhone = linked.first.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+        final linkedName = linked.first.name.trim().toLowerCase();
+        if ((normalizedPhone.isNotEmpty && normalizedPhone == linkedPhone) ||
+            normalizedName == linkedName) return linked.first;
+      }
+    }
     final match = customers.where((c) {
       final phone = c.phone.replaceAll(RegExp(r'[^0-9+]'), '');
       if (normalizedPhone.isNotEmpty && phone.isNotEmpty) return phone == normalizedPhone;
