@@ -904,6 +904,7 @@ class SuppliersPurchasesPage extends StatelessWidget {
     final month = purchases.where((p) => p.purchaseDate.year == now.year &&
       p.purchaseDate.month == now.month).fold<double>(0, (v, p) => v + p.totalAmount);
     final all = purchases.fold<double>(0, (v, p) => v + p.totalAmount);
+    final payable = purchases.fold<double>(0, (v, p) => v + p.outstanding);
     return ListView(padding: const EdgeInsets.fromLTRB(16, 22, 16, 90), children: [
       const Text('المورّدون والمشتريات', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
       const SizedBox(height: 4),
@@ -915,6 +916,11 @@ class SuppliersPurchasesPage extends StatelessWidget {
         const SizedBox(width: 9),
         Expanded(child: _MiniStat(label: 'إجمالي المشتريات', value: core.money(all), icon: Icons.shopping_cart_outlined)),
       ]),
+      const SizedBox(height: 9),
+      Card(child: ListTile(leading: const Icon(Icons.account_balance_outlined, color: gold),
+        title: const Text('مستحقات المورّدين'),
+        subtitle: const Text('المبالغ التي لم تُسدّد بعد'),
+        trailing: Text(core.money(payable), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)))),
       const SizedBox(height: 15),
       Row(children: [
         const Expanded(child: Text('المورّدون', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900))),
@@ -927,8 +933,12 @@ class SuppliersPurchasesPage extends StatelessWidget {
           leading: CircleAvatar(backgroundColor: raised, child: Icon(Icons.storefront_outlined,
             color: s.active ? gold : muted)),
           title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800)),
-          subtitle: Text([if (s.phone.isNotEmpty) s.phone, if (s.address.isNotEmpty) s.address,
-            if (!s.active) 'موقوف'].join(' • '), style: const TextStyle(color: muted, fontSize: 10)),
+          subtitle: Text([
+            if (s.phone.isNotEmpty) s.phone,
+            if (s.address.isNotEmpty) s.address,
+            'مستحق: ${core.money(purchases.where((p) => p.supplierId == s.id).fold<double>(0, (v, p) => v + p.outstanding))}',
+            if (!s.active) 'موقوف'
+          ].join(' • '), style: const TextStyle(color: muted, fontSize: 10)),
           trailing: PopupMenuButton<String>(onSelected: (v) async {
             if (v == 'edit') await _editSupplier(context, existing: s);
             if (v == 'toggle') { s.active = !s.active; await store.updateSupplier(s); }
@@ -959,8 +969,28 @@ class SuppliersPurchasesPage extends StatelessWidget {
             '${p.purchaseDate.toLocal().toString().substring(0, 10)} • ${p.paymentMethod}',
             style: const TextStyle(color: muted, fontSize: 10)),
           isThreeLine: true,
-          trailing: Text(core.money(p.totalAmount),
-            style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+              Text(core.money(p.totalAmount), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+              Text('مدفوع ${core.money(p.paidAmount)}', style: const TextStyle(color: muted, fontSize: 9)),
+              Text('متبقي ${core.money(p.outstanding)}', style: TextStyle(
+                color: p.outstanding > 0 ? Colors.orangeAccent : muted, fontSize: 9)),
+            ]),
+            PopupMenuButton<String>(onSelected: (v) {
+              if (v == 'payment') _addPayment(context, p);
+              if (v == 'history') showDialog<void>(context: context, builder: (ctx) => Directionality(
+                textDirection: TextDirection.rtl,
+                child: AlertDialog(title: const Text('سجل دفعات الفاتورة'),
+                  content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    if (p.payments.isEmpty) const EmptyState('لا توجد دفعات مسجلة.'),
+                    for (final pay in p.payments) ListTile(title: Text(core.money(pay.amount)),
+                      subtitle: Text('${pay.method} • ${pay.paidAt.toLocal().toString().substring(0, 16)} • ${pay.notes}')),
+                  ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))])));
+            }, itemBuilder: (_) => [
+              if (p.outstanding > 0) const PopupMenuItem(value: 'payment', child: Text('تسجيل دفعة')),
+              const PopupMenuItem(value: 'history', child: Text('سجل الدفعات')),
+            ]),
+          ]),
         )),
     ]);
   }
@@ -1007,6 +1037,7 @@ class SuppliersPurchasesPage extends StatelessWidget {
     String? materialId = materials.first.id;
     final count = TextEditingController(text: '1');
     final packageCost = TextEditingController(text: '0');
+    final paidNow = TextEditingController(text: '0');
     final invoice = TextEditingController();
     final notes = TextEditingController();
     var method = 'نقداً / باليد';
@@ -1016,7 +1047,9 @@ class SuppliersPurchasesPage extends StatelessWidget {
         final material = materials.firstWhere((m) => m.id == materialId);
         final packs = double.tryParse(count.text.replaceAll(',', '.')) ?? 0;
         final cost = double.tryParse(packageCost.text.replaceAll(',', '.')) ?? 0;
-        final valid = packs > 0 && cost >= 0 && packs.isFinite && cost.isFinite;
+        final paid = double.tryParse(paidNow.text.replaceAll(',', '.')) ?? -1;
+        final valid = packs > 0 && cost >= 0 && paid >= 0 && paid <= packs * cost &&
+          packs.isFinite && cost.isFinite && paid.isFinite;
         return Directionality(textDirection: TextDirection.rtl,
           child: AlertDialog(title: const Text('تسجيل فاتورة واستلام مخزون'),
             content: SizedBox(width: 460, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
@@ -1032,10 +1065,16 @@ class SuppliersPurchasesPage extends StatelessWidget {
                 onChanged: (v) { if (v != null) refresh(() => materialId = v); }),
               const SizedBox(height: 8),
               TextField(controller: count, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'عدد الألواح / الرولات / العبوات')),
+                decoration: const InputDecoration(labelText: 'عدد الألواح / الرولات / العبوات'),
+                onChanged: (_) => refresh(() {})),
               const SizedBox(height: 8),
               TextField(controller: packageCost, keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                decoration: const InputDecoration(labelText: 'سعر اللوح أو الرول أو العبوة بالدولار')),
+                decoration: const InputDecoration(labelText: 'سعر اللوح أو الرول أو العبوة بالدولار'),
+                onChanged: (_) => refresh(() {})),
+              const SizedBox(height: 8),
+              TextField(controller: paidNow, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'المبلغ المدفوع الآن بالدولار (0 = على الحساب)'),
+                onChanged: (_) => refresh(() {})),
               const SizedBox(height: 9),
               Container(width: double.infinity, padding: const EdgeInsets.all(11),
                 decoration: BoxDecoration(color: raised, borderRadius: BorderRadius.circular(12)),
@@ -1044,6 +1083,8 @@ class SuppliersPurchasesPage extends StatelessWidget {
                     style: const TextStyle(fontWeight: FontWeight.w800)),
                   Text('إجمالي الفاتورة: ${core.money(packs * cost)}',
                     style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+                  Text('المتبقي بعد الدفعة: ${core.money((packs * cost - (double.tryParse(paidNow.text.replaceAll(',', '.')) ?? 0)).clamp(0, double.infinity))}',
+                    style: const TextStyle(color: muted, fontSize: 10)),
                   Text('كلفة الوحدة الجديدة: ${(material.packUnits > 0 ? cost / material.packUnits : 0).toStringAsFixed(6)}',
                     style: const TextStyle(color: muted, fontSize: 10)),
                 ])),
@@ -1079,14 +1120,19 @@ class SuppliersPurchasesPage extends StatelessWidget {
       final material = materials.firstWhere((m) => m.id == materialId);
       final packs = double.parse(count.text.replaceAll(',', '.'));
       final cost = double.parse(packageCost.text.replaceAll(',', '.'));
+      final paid = double.parse(paidNow.text.replaceAll(',', '.'));
       final units = packs * material.packUnits;
       final unitCost = cost / material.packUnits;
+      final total = packs * cost;
+      final initialPayments = paid > 0 ? [core.SupplierPaymentEntry(
+        id: DateTime.now().microsecondsSinceEpoch.toString(), amount: paid,
+        method: method, paidAt: receivedAt, notes: 'دفعة عند استلام الفاتورة')] : <core.SupplierPaymentEntry>[];
       final purchase = core.StockPurchase(id: DateTime.now().microsecondsSinceEpoch.toString(),
         supplierId: supplier.id, supplierName: supplier.name,
         materialId: material.id, materialName: material.name,
         packageCount: packs, packUnits: material.packUnits,
         baseQuantity: units, packageCost: cost, unitCost: unitCost,
-        totalAmount: packs * cost, paymentMethod: method,
+        totalAmount: total, paymentMethod: method, paidAmount: paid, payments: initialPayments,
         invoiceNumber: invoice.text.trim(), purchaseDate: receivedAt, notes: notes.text.trim());
       try {
         await store.recordPurchase(purchase);
@@ -1096,7 +1142,51 @@ class SuppliersPurchasesPage extends StatelessWidget {
         if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر تسجيل الاستلام: $e')));
       }
     }
-    count.dispose(); packageCost.dispose(); invoice.dispose(); notes.dispose();
+    count.dispose(); packageCost.dispose(); paidNow.dispose(); invoice.dispose(); notes.dispose();
+  }
+
+  Future<void> _addPayment(BuildContext context, core.StockPurchase purchase) async {
+    final amount = TextEditingController();
+    final notes = TextEditingController();
+    var method = 'نقداً / باليد';
+    final result = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, refresh) => Directionality(textDirection: TextDirection.rtl,
+        child: AlertDialog(title: const Text('تسجيل دفعة للمورّد'),
+          content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text('المتبقي: ${core.money(purchase.outstanding)}',
+              style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+            const SizedBox(height: 8),
+            TextField(controller: amount, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'قيمة الدفعة'),
+              onChanged: (_) => refresh(() {})),
+            const SizedBox(height: 8),
+            DropdownButtonFormField<String>(value: method,
+              decoration: const InputDecoration(labelText: 'طريقة الدفع'),
+              items: ['نقداً / باليد', 'Whish Money', 'تحويل بنكي', 'مع شخص']
+                .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+              onChanged: (v) { if (v != null) refresh(() => method = v); }),
+            const SizedBox(height: 8),
+            TextField(controller: notes, maxLines: 2,
+              decoration: const InputDecoration(labelText: 'ملاحظة')),
+          ])),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: (double.tryParse(amount.text.replaceAll(',', '.')) ?? 0) > 0 &&
+              (double.tryParse(amount.text.replaceAll(',', '.')) ?? 0) <= purchase.outstanding
+              ? () => Navigator.pop(ctx, true) : null, child: const Text('حفظ الدفعة')),
+          ],
+        )));
+    if (result == true) {
+      try {
+        await store.addSupplierPayment(purchase, core.SupplierPaymentEntry(
+          id: DateTime.now().microsecondsSinceEpoch.toString(),
+          amount: double.parse(amount.text.replaceAll(',', '.')),
+          method: method, notes: notes.text.trim()));
+      } catch (e) {
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر تسجيل الدفعة: $e')));
+      }
+    }
+    amount.dispose(); notes.dispose();
   }
 }
 
