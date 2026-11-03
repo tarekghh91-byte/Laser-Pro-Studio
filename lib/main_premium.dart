@@ -989,7 +989,7 @@ class SuppliersPurchasesPage extends StatelessWidget {
       )));
     if (result == true) {
       if (existing == null) {
-        await store.addSupplier(core.Supplier(id: const Uuid().v4(), name: name.text.trim(),
+        await store.addSupplier(core.Supplier(id: DateTime.now().microsecondsSinceEpoch.toString(), name: name.text.trim(),
           phone: phone.text.trim(), address: address.text.trim(), notes: notes.text.trim()));
       } else {
         existing.name = name.text.trim(); existing.phone = phone.text.trim();
