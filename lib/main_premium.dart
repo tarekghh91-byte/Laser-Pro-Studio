@@ -1051,8 +1051,20 @@ class ReportsPage extends StatelessWidget {
       const SizedBox(height: 14),
       reportCard('تقرير اليوم', today, Icons.today_rounded),
       expenseReportCard('مصاريف اليوم', todayExpenses, Icons.receipt_long_outlined),
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
+        const Expanded(child: Text('نتيجة اليوم بعد المصاريف', style: TextStyle(fontWeight: FontWeight.w900))),
+        Text(core.money(today.fold<double>(0, (v, o) => v + o.grossMargin) -
+          todayExpenses.fold<double>(0, (v, e) => v + e.amount)),
+          style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+      ]))),
       reportCard('تقرير الشهر', month, Icons.calendar_month_rounded),
       expenseReportCard('مصاريف الشهر', monthExpenses, Icons.calendar_month_outlined),
+      Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
+        const Expanded(child: Text('نتيجة الشهر بعد المصاريف', style: TextStyle(fontWeight: FontWeight.w900))),
+        Text(core.money(month.fold<double>(0, (v, o) => v + o.grossMargin) -
+          monthExpenses.fold<double>(0, (v, e) => v + e.amount)),
+          style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+      ]))),
       reportCard('كل الطلبات المسلّمة', delivered, Icons.assessment_outlined),
     ]);
   }
