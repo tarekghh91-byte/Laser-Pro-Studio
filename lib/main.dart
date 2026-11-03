@@ -635,7 +635,14 @@ class OrderTile extends StatelessWidget {
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(value: order.status,
               decoration: const InputDecoration(labelText: 'حالة الطلب'),
-              items: ['جديد', 'قيد التنفيذ', 'جاهز', 'تم التسليم']
+              // A ready order has already consumed stock; a delivered order is final.
+              // Prevent backward transitions that would leave inventory deducted
+              // while making the order appear active again.
+              items: (order.status == 'تم التسليم'
+                  ? ['تم التسليم']
+                  : order.status == 'جاهز'
+                      ? ['جاهز', 'تم التسليم']
+                      : ['جديد', 'قيد التنفيذ', 'جاهز'])
                 .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
               onChanged: (v) async {
                 if (v == null || v == order.status) return;
