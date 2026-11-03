@@ -1081,7 +1081,7 @@ class SuppliersPurchasesPage extends StatelessWidget {
       final cost = double.parse(packageCost.text.replaceAll(',', '.'));
       final units = packs * material.packUnits;
       final unitCost = cost / material.packUnits;
-      final purchase = core.StockPurchase(id: const Uuid().v4(),
+      final purchase = core.StockPurchase(id: DateTime.now().microsecondsSinceEpoch.toString(),
         supplierId: supplier.id, supplierName: supplier.name,
         materialId: material.id, materialName: material.name,
         packageCount: packs, packUnits: material.packUnits,
