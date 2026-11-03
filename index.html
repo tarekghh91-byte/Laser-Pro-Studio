@@ -78,6 +78,68 @@ input:focus,select:focus,textarea:focus{border-color:#b99b5c;box-shadow:0 0 0 3p
 }
 @media(max-width:380px){.metric{font-size:21px}}
 
+
+/* Redesigned charcoal dashboard and workflow */
+:root{--bg:#101113;--panel:#191b1f;--panel2:#24272c;--text:#f7f7f5;--muted:#aeb3ba;--line:#34383e;--gold:#c7a96b;--radius:17px}
+body{background:#101113;color:#f7f7f5}
+.sidebar{background:#15171a;border-color:#292d32}
+.nav{border-radius:12px;margin:5px 0;padding:13px 14px}
+.nav.active,.nav:hover{background:#25282d;border-color:#4a4f56;color:#fff}
+.nav .ico{color:#c7a96b}
+main{padding-top:23px}
+.topbar{margin-bottom:20px;padding-bottom:14px;border-bottom:1px solid #2c3036}
+.topbar h1{font-size:24px}
+.top-actions{gap:10px}
+.top-actions:before{content:"";display:block}
+button.primary{background:#c7a96b;color:#171717;border-radius:12px;font-weight:750}
+button.secondary{background:#25282d;border:1px solid #3a3e45;border-radius:12px;color:#f5f5f5}
+button.danger{border-radius:12px}
+.card,.item{background:#191b1f;border:1px solid #30343a;border-radius:17px;box-shadow:0 7px 20px #0002}
+.metric{color:#fff}
+input,select,textarea{background:#24272c;border:1px solid #3a3f46;border-radius:11px;color:#fff}
+.field{color:#d0d3d7}
+.field span{font-weight:600}
+#modal{background:#050607c9;backdrop-filter:blur(5px)}
+.dialog{background:#191b1f;border:1px solid #3b4047;border-radius:20px;padding:21px}
+.dialog-head{border-bottom:1px solid #30343a;padding-bottom:12px}
+.dialog-actions{border-top:1px solid #30343a;padding-top:13px}
+.home-hero{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:23px 24px;margin-bottom:18px;border:1px solid #34383e;border-radius:20px;background:linear-gradient(110deg,#1b1d21,#15171a)}
+.home-hero h2{font-size:23px;margin:7px 0}.home-hero p{margin:0;color:#aeb3ba;font-size:13px}
+.eyebrow{font-size:11px;color:#c7a96b;font-weight:700;letter-spacing:.5px}
+.hero-new-order{font-size:15px;padding:15px 24px;min-width:155px;box-shadow:0 7px 18px #c7a96b25}
+.dashboard-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:13px;margin-bottom:18px}
+.dashboard-tile{display:flex;flex-direction:column;align-items:flex-start;gap:8px;text-align:right;min-height:146px;padding:18px;background:#1a1c20;border:1px solid #353a41;border-radius:17px;color:#fff;transition:transform .15s,border-color .15s}
+.dashboard-tile:active{transform:scale(.985)}
+.dashboard-tile strong{font-size:31px;line-height:1.1}
+.dashboard-tile small{font-size:12px;color:#aeb3ba}
+.dashboard-tile i{font-style:normal;font-size:11px;color:#c7a96b;margin-top:auto}
+.tile-progress{border-right:4px solid #c7a96b}.tile-ready{border-right:4px solid #63c89a}.tile-receivable{border-right:4px solid #e7b85c}.tile-stock{border-right:4px solid #7d9fca}
+.dashboard-summary{display:grid;grid-template-columns:1.5fr 1fr;gap:13px;margin-bottom:22px}
+.summary-main,.summary-side{padding:18px;background:#191b1f;border:1px solid #30343a;border-radius:17px}
+.summary-numbers{display:grid;grid-template-columns:repeat(3,1fr);gap:12px;margin-top:15px}
+.summary-numbers div{display:grid;gap:5px}.summary-numbers small{color:#aeb3ba;font-size:11px}.summary-numbers b{font-size:20px}
+.summary-side .row{margin-top:15px}
+.order-form{display:grid;gap:12px}
+.form-section{padding:16px;background:#15171b;border:1px solid #30343a;border-radius:15px;margin-bottom:12px}
+.form-section h3{margin:0 0 12px;font-size:15px}
+.form-section-title{display:flex;align-items:center;gap:11px;margin-bottom:15px}
+.form-section-title>b{width:30px;height:30px;display:grid;place-items:center;border-radius:10px;background:#302b20;color:#d5b979}
+.form-section-title h3{margin:0 0 3px}.form-section-title small{font-size:11px;color:#aeb3ba}
+.defaults-line{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:12px 14px;background:#22252a;border:1px solid #3a3f46;border-radius:11px}
+.defaults-line small{color:#aeb3ba}
+.cost-preview{margin-top:10px;padding:12px;border-radius:11px;background:#202329;color:#e4ca91}
+.dashboard-tile:focus-visible,button:focus-visible{outline:2px solid #c7a96b;outline-offset:2px}
+@media(max-width:900px){
+ .dashboard-tiles{grid-template-columns:repeat(2,minmax(0,1fr))}
+ .dashboard-summary{grid-template-columns:1fr}
+ .home-hero{padding:17px;align-items:flex-start}
+ .home-hero h2{font-size:19px}
+ .hero-new-order{min-width:0;padding:12px 15px;white-space:nowrap}
+ .summary-numbers b{font-size:17px}
+ .dialog{padding:16px}
+}
+@media(max-width:420px){.dashboard-tile{min-height:130px;padding:14px}.dashboard-tile strong{font-size:27px}.home-hero{flex-direction:column}.hero-new-order{width:100%}}
+
 </style>
 </head>
 <body>
@@ -168,17 +230,19 @@ function metric(label,value,sub){return '<div class="card"><div class="metric-la
 function isSale(o){return isHanded(o)}
 function homePage(){
 const all=rows("orders").filter(o=>o.status!=="cancelled");
-const inProgress=all.filter(o=>o.status==="in_progress").length;
-const ready=all.filter(o=>o.status==="ready"&&!isHanded(o)).length;
+const inProgress=all.filter(o=>o.status==="in_progress");
+const ready=all.filter(o=>o.status==="ready"&&!isHanded(o));
 const handed=all.filter(isHanded);
-const unpaid=handed.filter(o=>remaining(o)>.005).length;
+const receivables=handed.filter(o=>remaining(o)>.005);
 const low=rows("materials").filter(m=>m.is_active!==false&&n(m.current_stock)<=n(m.reorder_level)).length;
 const revenue=handed.reduce((s,o)=>s+n(o.agreed_price),0);
 const cash=rows("payments").reduce((s,p)=>s+n(p.amount),0);
 const recent=[...all].sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||""))).slice(0,5);
-return '<div class="cards">'+metric("قيد التنفيذ",inProgress)+metric("جاهز للاستلام",ready)+metric("تم التسليم وباقٍ قبض",unpaid)+metric("مواد قاربت على النفاد",low)+'</div>'+
-'<div class="grid2"><div class="card"><h3>ملخص العمل</h3><p>إجمالي المبيعات بعد التسليم: <b class="money">'+money(revenue)+'</b></p><p>المقبوض فعلياً: <b class="money">'+money(cash)+'</b></p><p>عدد الطلبات المسلّمة: <b>'+handed.length+'</b></p>'+btn("+ طلب جديد","new-order","primary")+'</div><div class="card"><h3>اختصارات سريعة</h3><div class="stack">'+btn("إضافة منتج","new-product")+btn("إضافة مادة للمخزون","new-material")+btn("تسجيل مصروف","new-expense")+'</div></div></div>'+
-'<div class="section-head"><h2>آخر الطلبات</h2>'+btn("عرض كل الطلبات","go:orders")+'</div><div class="stack">'+(recent.map(orderCard).join("")||'<div class="empty">لا توجد طلبات بعد. أنشئ أول طلب من زر «طلب جديد».</div>')+'</div>';
+const tile=(title,count,sub,filter,tone)=>'<button type="button" class="dashboard-tile '+tone+'" data-action="filter-orders:'+filter+'"><span>'+title+'</span><strong>'+count+'</strong><small>'+sub+'</small><i>عرض التفاصيل ←</i></button>';
+return '<div class="home-hero"><div><span class="eyebrow">إدارة المشغل</span><h2>أهلاً بك في LASER PRO</h2><p>كل طلباتك وحساباتك ومخزونك في مكان واحد.</p></div>'+btn("+ طلب جديد","new-order","primary hero-new-order")+'</div>'+
+'<div class="dashboard-tiles">'+tile("قيد التنفيذ",inProgress.length,"طلبات قيد التصنيع","in_progress","tile-progress")+tile("جاهز للاستلام",ready.length,"بانتظار التسليم","ready","tile-ready")+tile("مين إله مصاري عندك",receivables.length,"طلبات مسلّمة وباقي قبضها","receivable","tile-receivable")+tile("مواد قاربت على النفاد",low,"تحتاج متابعة بالمخزون","low-stock","tile-stock")+'</div>'+
+'<div class="dashboard-summary"><div class="summary-main"><span class="eyebrow">الملخص المالي</span><div class="summary-numbers"><div><small>المبيعات بعد التسليم</small><b>'+money(revenue)+'</b></div><div><small>المقبوض فعلياً</small><b>'+money(cash)+'</b></div><div><small>طلبات تم تسليمها</small><b>'+handed.length+'</b></div></div></div><div class="summary-side"><span class="eyebrow">إدارة سريعة</span><div class="row">'+btn("الطلبات","go:orders")+btn("المخزون","go:materials")+btn("المحاسبة","go:accounting")+'</div></div></div>'+
+'<div class="section-head"><h2>آخر الطلبات</h2>'+btn("كل الطلبات","go:orders")+'</div><div class="stack">'+(recent.map(orderCard).join("")||'<div class="empty">لا توجد طلبات بعد. ابدأ من زر «طلب جديد».</div>')+'</div>';
 }
 function orderCard(o){
 const handed=isHanded(o),p=paid(o.id),rem=remaining(o);
@@ -259,7 +323,8 @@ const receivable=handed.reduce((s,o)=>s+remaining(o),0);
 const costs=handed.reduce((s,o)=>s+(o.finalized_at?n(o.calculated_material_cost_snapshot):n(o.estimated_unit_cost_snapshot)*n(o.quantity||1)),0);
 const expenses=rows("expenses").reduce((s,x)=>s+n(x.amount),0);
 const profit=revenue-costs-expenses;
-return '<div class="cards">'+metric("المبيعات بعد التسليم",money(revenue))+metric("المقبوض فعلياً",money(received))+metric("ديون مستحقة",money(receivable))+metric("الربح بعد المصاريف",money(profit))+'</div><div class="grid2"><div class="card"><h3>حركة المال</h3><p>المقبوض يشمل أي عربون مسجل حتى لو لم يُسلّم الطلب.</p><p>إجمالي المصاريف التشغيلية: <b>'+money(expenses)+'</b></p><p>تكلفة المواد للطلبات المسلّمة: <b>'+money(costs)+'</b></p></div><div class="card"><h3>مستحقات الزبائن</h3><div class="stack">'+handed.filter(o=>remaining(o)>.005).map(o=>'<div class="line-row">'+esc(o.order_number)+' · '+esc(o.customer_name)+' <b style="float:left">'+money(remaining(o))+'</b></div>').join("")||'<p class="muted">لا توجد مستحقات بعد التسليم.</p>'+'</div></div></div>';
+const owesCustomers=handed.filter(o=>remaining(o)>.005);
+return '<div class="cards">'+metric("المبيعات بعد التسليم",money(revenue))+metric("المقبوض فعلياً",money(received))+metric("ديون مستحقة لك",money(receivable))+metric("الربح بعد المصاريف",money(profit))+'</div><div class="grid2"><div class="card"><h3>حركة المال</h3><p>المقبوض يشمل أي عربون مسجل حتى لو لم يُسلّم الطلب.</p><p>إجمالي المصاريف التشغيلية: <b>'+money(expenses)+'</b></p><p>تكلفة المواد للطلبات المسلّمة: <b>'+money(costs)+'</b></p></div><div class="card"><h3>مين إله مصاري عندك</h3><div class="stack">'+(owesCustomers.map(o=>'<div class="line-row">'+esc(o.order_number)+' · '+esc(o.customer_name)+' <b style="float:left">'+money(remaining(o))+'</b></div>').join("")||'<p class="muted">لا توجد مستحقات بعد التسليم.</p>')+'</div></div></div><div class="hint">حساب المبالغ المستحقة للمورّدين يحتاج تسجيل فواتير الشراء والمبالغ المدفوعة والمتبقية لكل مورّد. لن أضع رقماً تقديرياً غير موجود في السجلات.</div>';
 }
 function expensesPage(){return '<div class="section-head"><h2>المصاريف التشغيلية</h2>'+btn("+ تسجيل مصروف","new-expense","primary")+'</div><div class="stack">'+(rows("expenses").map(x=>'<div class="item"><div class="item-head"><h3>'+esc(x.title)+'</h3><b class="money">'+money(x.amount)+'</b></div><p>'+esc(x.category)+' · '+esc(x.expense_date||"")+' · '+esc(x.notes||"")+'</p></div>').join("")||'<div class="empty">لا توجد مصاريف مسجلة.</div>')+'</div>'}
 function capitalPage(){return '<div class="section-head"><h2>رأس المال والتأسيس</h2>'+btn("+ سجل تأسيس","new-capital","primary")+'</div><div class="stack">'+(rows("capital_setup_records").map(x=>'<div class="item"><div class="item-head"><h3>'+esc(x.item_name)+'</h3><b class="money">'+money(x.total_amount)+'</b></div><p>'+esc(x.category||"")+' · '+esc(x.record_date||"")+' · المدفوع '+money(x.paid_amount)+'</p></div>').join("")||'<div class="empty">أضف الماكينة والمعدات وتجهيزات بداية المشروع.</div>')+'</div>'}
@@ -289,48 +354,52 @@ $("modalForm").onsubmit=async e=>{e.preventDefault();const b=$("modalSave");b.di
 function newOrder(){
 const products=rows("product_types").filter(p=>p.is_active!==false);
 const customers=rows("customers");
-const pOpts=[["","اختر منتجاً"],...products.map(p=>[p.id,p.name])];
-const cOpts=[["","زبون جديد"],...customers.map(c=>[c.id,c.full_name])];
-const body='<div class="fields">'+selectField("product_type_id","المنتج",pOpts)+selectField("customer_id","الزبون",cOpts)+
-selectField("order_type","نوع الطلب",[["person_figurine","مجسم شخص"],["profession_figurine","مجسم مهنة"],["hobby_figurine","مجسم هواية"],["keychain","ميدالية"],["wooden_frame","ستاند اسم وصورة"],["custom_product","منتج خاص"],["studio_design","تصميم استوديو"],["other","أخرى"]])+
-field("quantity","الكمية","number",1,'min="1" step="1" required')+
-field("customer_name","اسم الزبون","text","","required")+
-field("customer_phone","رقم الهاتف","tel","")+
-field("customer_address","عنوان السكن","text","")+
-field("order_date","تاريخ الطلب","date",today())+
-field("delivery_deadline","موعد التسليم","date","")+
-field("agreed_price","السعر المتفق عليه ($)","number","0",'min="0" step=".01" required')+
-field("width_cm","العرض (سم)","number","",'min="0" step=".1"')+
-field("height_cm","الارتفاع (سم)","number","",'min="0" step=".1"')+
-field("base_height_cm","ارتفاع القاعدة (سم)","number","4",'min="0" step=".1"')+
-field("background_width_cm","عرض الخلفية (سم)","number","",'min="0" step=".1"')+
-field("background_height_cm","ارتفاع الخلفية (سم)","number","",'min="0" step=".1"')+
-'<label class="check"><input type="checkbox" name="has_base"> مع قاعدة</label><label class="check"><input type="checkbox" name="has_background"> مع خلفية</label><label class="check"><input type="checkbox" name="is_urgent"> طلب مستعجل</label><label class="check"><input type="checkbox" name="needs_cut_files" checked> يحتاج ملفات قص</label>'+textarea("notes","ملاحظات")+'</div><div class="hint">رقم الطلب يتولد تلقائياً من قاعدة البيانات. يبدأ النظام من التسلسل المحفوظ، ولا يمكن تعديل الرقم بعد إنشائه.</div>';
+const pOpts=[["","اختر المنتج"],...products.map(p=>[p.id,p.name])];
+const body='<div class="order-form"><section class="form-section"><div class="form-section-title"><b>01</b><div><h3>المنتج والمقاس</h3><small>اختر المنتج، وسيُحمّل البرنامج إعداداته المحفوظة.</small></div></div><div class="fields">'+selectField("product_type_id","المنتج",pOpts)+field("quantity","الكمية","number",1,'min="1" step="1" required')+field("width_cm","العرض (سم)","number","","readonly")+field("height_cm","الارتفاع (سم)","number","","readonly")+'<div class="field wide" id="productDefaults"><span>إعدادات المنتج</span><div class="defaults-line">اختر المنتج لعرض المقاسات والخيارات الافتراضية.</div></div><label class="check"><input type="checkbox" name="has_base"> مع قاعدة</label><label class="check"><input type="checkbox" name="has_background"> مع خلفية</label><input type="hidden" name="base_height_cm" value="0"><input type="hidden" name="background_width_cm"><input type="hidden" name="background_height_cm"></div></section>'+
+'<section class="form-section"><div class="form-section-title"><b>02</b><div><h3>بيانات الزبون</h3><small>اكتب الاسم؛ إذا كان محفوظاً ستظهر بياناته تلقائياً.</small></div></div><div class="fields">'+field("customer_name","اسم الزبون","text","","required list="customerNames" autocomplete="off"")+'<datalist id="customerNames">'+customers.map(x=>'<option value="'+esc(x.full_name)+'"></option>').join("")+'</datalist>'+field("customer_phone","رقم الهاتف","tel","")+field("customer_address","عنوان السكن","text","")+'</div></section>'+
+'<section class="form-section"><div class="form-section-title"><b>03</b><div><h3>السعر والموعد</h3><small>السعر يُحسب تلقائياً من سعر المنتج والكمية، ويمكنك تعديله.</small></div></div><div class="fields">'+field("agreed_price","السعر المتفق عليه ($)","number","0",'min="0" step=".01" required')+field("order_date","تاريخ الطلب","date",today())+field("delivery_deadline","موعد التسليم","date","")+'<label class="check"><input type="checkbox" name="is_urgent"> طلب مستعجل</label><label class="check"><input type="checkbox" name="needs_cut_files" checked> يحتاج ملفات قص</label>'+textarea("notes","ملاحظات")+'</div></section></div><div class="hint">رقم الطلب يتولد تلقائياً عند الحفظ. يبدأ من التسلسل المحفوظ ولا يمكن تعديله.</div>';
 openModal("طلب جديد",body,async f=>{
 const product=products.find(p=>p.id===f.get("product_type_id"));
+if(!product)throw Error("اختر منتجاً من قائمة المنتجات أولاً.");
 const qty=Math.max(1,Math.floor(n(f.get("quantity"))));
 const name=String(f.get("customer_name")||"").trim();
 if(!name)throw Error("أدخل اسم الزبون.");
-let customerId=f.get("customer_id")||null;
-if(!customerId){const {data,error}=await SB.from("customers").insert({owner_id:state.user.id,full_name:name,phone:String(f.get("customer_phone")||""),address:String(f.get("customer_address")||"")}).select("id").single();if(error)throw error;customerId=data.id}
-const width=n(f.get("width_cm"))||n(product?.default_width_cm)||null;
-const height=n(f.get("height_cm"))||n(product?.default_height_cm)||null;
-const hasBackground=f.get("has_background")==="on";
-const hasBase=f.get("has_base")==="on";
-const backgroundWidth=hasBackground?(n(f.get("background_width_cm"))||width):null;
-const backgroundHeight=hasBackground?(n(f.get("background_height_cm"))||height):null;
-const price=n(f.get("agreed_price"))||n(product?.sale_price)*qty;
-const row={owner_id:state.user.id,customer_id:customerId,customer_name:name,customer_phone:String(f.get("customer_phone")||""),customer_address:String(f.get("customer_address")||""),order_type:String(f.get("order_type")||"custom_product"),quantity:qty,status:"in_progress",order_date:String(f.get("order_date")||today()),delivery_deadline:f.get("delivery_deadline")||null,is_urgent:f.get("is_urgent")==="on",needs_cut_files:f.get("needs_cut_files")==="on",agreed_price:price,deposit_amount:0,notes:String(f.get("notes")||""),product_type_id:product?.id||null,product_name_snapshot:product?.name||"منتج خاص",product_size_snapshot:product?.size_label||((width&&height)?width+"×"+height+" سم":""),unit_price_snapshot:n(product?.sale_price)||price/qty,estimated_unit_cost_snapshot:n(product?.estimated_cost),width_cm:width,height_cm:height,has_base:hasBase,base_height_cm:n(f.get("base_height_cm"))||n(product?.base_height_cm)||4,has_background:hasBackground,background_width_cm:backgroundWidth,background_height_cm:backgroundHeight,base_width_cm:hasBase?width:null};
+const phone=String(f.get("customer_phone")||"").trim(),address=String(f.get("customer_address")||"").trim();
+let customer=customers.find(x=>x.full_name.trim().toLocaleLowerCase()===name.toLocaleLowerCase());
+let customerId=customer?.id||null;
+if(customer){const upd=await SB.from("customers").update({phone:phone||customer.phone||"",address:address||customer.address||""}).eq("id",customer.id);if(upd.error)throw upd.error}
+else{const ins=await SB.from("customers").insert({owner_id:state.user.id,full_name:name,phone,address}).select("id").single();if(ins.error)throw ins.error;customerId=ins.data.id}
+const width=n(product.default_width_cm)||null,height=n(product.default_height_cm)||null;
+const hasBase=f.get("has_base")==="on",hasBackground=f.get("has_background")==="on";
+const price=n(f.get("agreed_price"));
+const category=product.category||"other";
+const orderType=["person_figurine","profession_figurine","hobby_figurine","keychain","wooden_frame","custom_product","studio_design","other"].includes(category)?category:"other";
+const row={owner_id:state.user.id,customer_id:customerId,customer_name:name,customer_phone:phone||customer?.phone||"",customer_address:address||customer?.address||"",order_type:orderType,quantity:qty,status:"in_progress",order_date:String(f.get("order_date")||today()),delivery_deadline:f.get("delivery_deadline")||null,is_urgent:f.get("is_urgent")==="on",needs_cut_files:f.get("needs_cut_files")==="on",agreed_price:price,deposit_amount:0,notes:String(f.get("notes")||""),product_type_id:product.id,product_name_snapshot:product.name,product_size_snapshot:product.size_label||((width&&height)?width+"×"+height+" سم":""),unit_price_snapshot:n(product.sale_price),estimated_unit_cost_snapshot:n(product.estimated_cost),width_cm:width,height_cm:height,has_base:hasBase,base_height_cm:hasBase?n(product.base_height_cm)||4:0,has_background:hasBackground,background_width_cm:hasBackground?width:null,background_height_cm:hasBackground?height:null,base_width_cm:hasBase?width:null};
 const {data,error}=await SB.from("orders").insert(row).select("*").single();if(error)throw error;
 toast("تم إنشاء الطلب "+data.order_number);
 });
-const form=$("modalForm");
-const prod=form.querySelector('[name="product_type_id"]'),qty=form.querySelector('[name="quantity"]'),price=form.querySelector('[name="agreed_price"]');
-function fillProduct(){const p=products.find(x=>x.id===prod.value);if(!p)return;form.querySelector('[name="agreed_price"]').value=(n(p.sale_price)*Math.max(1,Math.floor(n(qty.value)||1))).toFixed(2);form.querySelector('[name="width_cm"]').value=p.default_width_cm||"";form.querySelector('[name="height_cm"]').value=p.default_height_cm||"";form.querySelector('[name="base_height_cm"]').value=p.base_height_cm||4;form.querySelector('[name="has_base"]').checked=!!p.has_base_default;form.querySelector('[name="has_background"]').checked=!!p.has_background_default;form.querySelector('[name="background_width_cm"]').value=p.default_width_cm||"";form.querySelector('[name="background_height_cm"]').value=p.default_height_cm||""}
-prod.onchange=fillProduct;qty.onchange=fillProduct;
-const w=form.querySelector('[name="width_cm"]'),h=form.querySelector('[name="height_cm"]'),bw=form.querySelector('[name="background_width_cm"]'),bh=form.querySelector('[name="background_height_cm"]'),bg=form.querySelector('[name="has_background"]');
-w.onchange=()=>{if(bg.checked)bw.value=w.value};h.onchange=()=>{if(bg.checked)bh.value=h.value};bg.onchange=()=>{if(bg.checked){bw.value=w.value;bh.value=h.value}};
-const cust=form.querySelector('[name="customer_id"]');cust.onchange=()=>{const c=customers.find(x=>x.id===cust.value);if(c){form.querySelector('[name="customer_name"]').value=c.full_name||"";form.querySelector('[name="customer_phone"]').value=c.phone||"";form.querySelector('[name="customer_address"]').value=c.address||""}}
+const form=$("modalForm"),prod=form.querySelector('[name="product_type_id"]'),qty=form.querySelector('[name="quantity"]'),price=form.querySelector('[name="agreed_price"]'),nameInput=form.querySelector('[name="customer_name"]');
+function fillProduct(){
+const p=products.find(x=>x.id===prod.value);
+const info=form.querySelector("#productDefaults");
+if(!p){form.querySelector('[name="width_cm"]').value="";form.querySelector('[name="height_cm"]').value="";price.value="0";info.innerHTML='<span>إعدادات المنتج</span><div class="defaults-line">اختر المنتج لعرض المقاسات والخيارات الافتراضية.</div>';return}
+form.querySelector('[name="width_cm"]').value=p.default_width_cm||"";
+form.querySelector('[name="height_cm"]').value=p.default_height_cm||"";
+form.querySelector('[name="base_height_cm"]').value=p.base_height_cm||4;
+form.querySelector('[name="has_base"]').checked=!!p.has_base_default;
+form.querySelector('[name="has_background"]').checked=!!p.has_background_default;
+form.querySelector('[name="background_width_cm"]').value=p.default_width_cm||"";
+form.querySelector('[name="background_height_cm"]').value=p.default_height_cm||"";
+price.value=(n(p.sale_price)*Math.max(1,Math.floor(n(qty.value)||1))).toFixed(2);
+info.innerHTML='<span>إعدادات المنتج</span><div class="defaults-line"><b>'+esc(p.size_label||((p.default_width_cm||"—")+" × "+(p.default_height_cm||"—")+" سم"))+'</b><small>الخلفية: نفس مقاس المنتج · القاعدة: عرض '+(p.default_width_cm||"—")+' سم وارتفاع '+(p.base_height_cm||4)+' سم</small></div>';
+}
+prod.onchange=fillProduct;
+qty.oninput=()=>{const p=products.find(x=>x.id===prod.value);if(p)price.value=(n(p.sale_price)*Math.max(1,Math.floor(n(qty.value)||1))).toFixed(2)};
+const findCustomer=()=>{
+const typed=nameInput.value.trim().toLocaleLowerCase(),c=customers.find(x=>x.full_name.trim().toLocaleLowerCase()===typed);
+if(c){form.querySelector('[name="customer_phone"]').value=c.phone||"";form.querySelector('[name="customer_address"]').value=c.address||""}
+};
+nameInput.addEventListener("input",findCustomer);nameInput.addEventListener("change",findCustomer);
 }
 function consumptionRow(defaultId,defaultQty){
 const opts=[["","اختر المادة"],...rows("materials").filter(m=>m.is_active!==false).map(m=>[m.id,m.name+" ("+m.current_stock+" "+m.unit+")"])];
@@ -339,15 +408,31 @@ return '<div class="consume-row"><select name="material_id">'+opts.map(x=>'<opti
 function readyOrder(id){
 const o=one("orders",id);if(!o)return;
 const reqs=rows("product_material_requirements").filter(r=>r.product_type_id===o.product_type_id&&(r.applies_when==="always"||(r.applies_when==="with_base"&&o.has_base)||(r.applies_when==="with_background"&&o.has_background)));
-let initial=reqs.map(r=>consumptionRow(r.material_id,n(r.quantity)*n(o.quantity||1))).join("");
-let body='<p class="muted">حدد المواد والكميات التي استُهلكت فعلياً في هذا الطلب. عند التأكيد تُخصم من المخزون مرة واحدة، ولا تُسجل المبيعات قبل التسليم.</p><div id="consumeRows">'+(initial||consumptionRow("",1))+'</div><button type="button" class="secondary" id="addConsume">+ إضافة مادة أخرى</button>';
+const materials=rows("materials").filter(m=>m.is_active!==false);
+const area=n(o.width_cm)*n(o.height_cm)*n(o.quantity||1);
+let initial=reqs.map(r=>{const m=one("materials",r.material_id);return consumptionRow(r.material_id,m?.costing_mode==="area"?area:n(r.quantity)*n(o.quantity||1))}).join("");
+const packOpts=[["","بدون تغليف"],...materials.filter(m=>m.category==="packaging").map(m=>[m.id,m.name+" · "+money(m.average_unit_cost)+"/قطعة · المتوفر "+n(m.current_stock)])];
+let body='<div class="hint">تُحسب تكلفة الخشب حسب مساحة القطعة المستخدمة فقط. مثال: قطعة 15×15 سم = 225 سم²، وتُحسب بسعر السنتيمتر المربع المسجل للمادة.</div><div class="form-section"><h3>مواد التصنيع</h3><p class="muted">الكميات المقترحة محسوبة من مقاس المنتج والكمية. يمكنك تعديلها قبل التأكيد.</p><div id="consumeRows">'+(initial||consumptionRow("",1))+'</div><button type="button" class="secondary" id="addConsume">+ إضافة مادة أخرى</button></div><div class="form-section"><h3>التغليف</h3><div class="fields">'+selectField("packaging_material_id","نوع التغليف",packOpts,"")+field("packaging_quantity","عدد أكياس / علب التغليف","number",o.quantity||1,'min="0" step="1"')+'</div><div id="costPreview" class="cost-preview">اختر التغليف لعرض تكلفته.</div></div>';
 openModal("تأكيد جاهزية "+esc(o.order_number),body,async()=>{
 const lines=[...document.querySelectorAll("#consumeRows .consume-row")].map(r=>({material_id:r.querySelector('[name="material_id"]').value,quantity_used:n(r.querySelector('[name="quantity_used"]').value)})).filter(x=>x.material_id&&x.quantity_used>0);
+const packId=$("modalForm").querySelector('[name="packaging_material_id"]').value;
+const packQty=n($("modalForm").querySelector('[name="packaging_quantity"]').value);
+if(packId&&packQty>0)lines.push({material_id:packId,quantity_used:packQty});
 const {data,error}=await SB.rpc("mark_order_ready",{p_order_id:id,p_consumptions:lines});if(error)throw error;
-toast(data?.already_ready?"الطلب جاهز مسبقاً":"تم تأكيد الجاهزية وخصم المواد");
+toast(data?.already_ready?"الطلب جاهز مسبقاً":"تم تأكيد الجاهزية وخصم المواد والتغليف");
 });
-$("addConsume").onclick=()=>{$("consumeRows").insertAdjacentHTML("beforeend",consumptionRow("",1));bindRemoveLines()};
-bindRemoveLines();
+const add=$("addConsume");add.onclick=()=>{$("consumeRows").insertAdjacentHTML("beforeend",consumptionRow("",1));bindRemoveLines();bindConsumptionPricing(o)};
+bindRemoveLines();bindConsumptionPricing(o);
+const pack=$("modalForm").querySelector('[name="packaging_material_id"]'),packQty=$("modalForm").querySelector('[name="packaging_quantity"]');
+function updatePack(){const m=one("materials",pack.value);const total=m?n(m.average_unit_cost)*n(packQty.value):0;$("costPreview").textContent=m?"تكلفة التغليف: "+money(total)+" ("+money(m.average_unit_cost)+" × "+n(packQty.value)+" قطعة)":"اختر التغليف لعرض تكلفته."}
+pack.onchange=updatePack;packQty.oninput=updatePack;
+}
+function bindConsumptionPricing(o){
+document.querySelectorAll("#consumeRows .consume-row").forEach(row=>{
+const sel=row.querySelector('[name="material_id"]'),qty=row.querySelector('[name="quantity_used"]');
+const auto=()=>{const m=one("materials",sel.value);if(m?.costing_mode==="area"&&o.width_cm&&o.height_cm)qty.value=(n(o.width_cm)*n(o.height_cm)*n(o.quantity||1)).toFixed(2)};
+sel.onchange=auto;auto();
+});
 }
 function bindRemoveLines(){document.querySelectorAll(".remove-line").forEach(b=>b.onclick=()=>b.closest(".consume-row").remove())}
 function handoffOrder(id){
@@ -587,6 +672,7 @@ async function handleAction(a){
 try{
 if(a==="refresh"){await loadData();render();return}
 if(a==="new-order")return newOrder();
+if(a.startsWith("filter-orders:")){const f=a.split(":")[1];state.page="orders";render();const sel=$("orderFilter");if(sel){sel.value=f==="receivable"?"unpaid":f;refreshOrderList()}return}
 if(a==="new-product")return newProduct();
 if(a.startsWith("product-materials:"))return productMaterials(a.split(":")[1]);
 if(a.startsWith("receive-material:"))return receiveMaterial(a.split(":")[1]);
