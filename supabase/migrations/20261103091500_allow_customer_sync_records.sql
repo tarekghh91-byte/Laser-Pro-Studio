@@ -1,10 +1,10 @@
--- Expand the per-user sync store for independent customers, product catalogue,
--- and the expense ledger. Keep records scoped by owner_id.
+-- Expand the per-user sync store for customers, catalogue, expenses,
+-- suppliers, and stock receipts. Keep records scoped by owner_id.
 alter table public.lp_sync_records
   drop constraint if exists lp_sync_records_collection_check;
 alter table public.lp_sync_records
   add constraint lp_sync_records_collection_check
-  check (collection = any (array['orders','materials','customers','products','expenses']::text[]));
+  check (collection = any (array['orders','materials','customers','products','expenses','suppliers','purchases']::text[]));
 
 create or replace function public.lp_put_sync_record(
   p_collection text,
@@ -22,7 +22,7 @@ declare
   v_version bigint;
 begin
   if v_user is null then raise exception 'AUTH_REQUIRED'; end if;
-  if p_collection not in ('orders','materials','customers','products','expenses')
+  if p_collection not in ('orders','materials','customers','products','expenses','suppliers','purchases')
      or length(p_record_id)>128 or length(p_record_id)<1 or p_payload is null then
     raise exception 'INVALID_RECORD';
   end if;
