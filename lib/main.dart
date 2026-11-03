@@ -197,6 +197,47 @@ class Material {
   );
 }
 
+class StudioProduct {
+  StudioProduct({required this.id, required this.name, this.category = 'مجسمات',
+    this.size = '', this.description = '', required this.salePrice,
+    this.active = true, DateTime? createdAt}) : createdAt = createdAt ?? DateTime.now();
+  final String id;
+  String name, category, size, description;
+  double salePrice;
+  bool active;
+  DateTime createdAt;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'category': category,
+    'size': size, 'description': description, 'salePrice': salePrice,
+    'active': active, 'createdAt': createdAt.toIso8601String()};
+  factory StudioProduct.fromJson(Map<String, dynamic> j) => StudioProduct(
+    id: j['id'] as String, name: j['name'] as String? ?? '',
+    category: j['category'] as String? ?? 'مجسمات', size: j['size'] as String? ?? '',
+    description: j['description'] as String? ?? '',
+    salePrice: (j['salePrice'] as num? ?? 0).toDouble(),
+    active: j['active'] as bool? ?? true,
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''));
+}
+
+class BusinessExpense {
+  BusinessExpense({required this.id, required this.title, required this.category,
+    required this.amount, required this.paymentMethod, DateTime? expenseDate,
+    this.notes = ''}) : expenseDate = expenseDate ?? DateTime.now();
+  final String id;
+  String title, category, paymentMethod, notes;
+  double amount;
+  DateTime expenseDate;
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'category': category,
+    'amount': amount, 'paymentMethod': paymentMethod,
+    'expenseDate': expenseDate.toIso8601String(), 'notes': notes};
+  factory BusinessExpense.fromJson(Map<String, dynamic> j) => BusinessExpense(
+    id: j['id'] as String, title: j['title'] as String? ?? '',
+    category: j['category'] as String? ?? 'أخرى',
+    amount: (j['amount'] as num? ?? 0).toDouble(),
+    paymentMethod: j['paymentMethod'] as String? ?? 'نقداً',
+    expenseDate: DateTime.tryParse(j['expenseDate'] as String? ?? ''),
+    notes: j['notes'] as String? ?? '');
+}
+
 class StudioStore extends ChangeNotifier {
   StudioStore({required this.ownerId}) : _cloud = CloudSync(ownerId);
   final String ownerId;
@@ -204,14 +245,19 @@ class StudioStore extends ChangeNotifier {
   final List<Order> orders = [];
   final List<Material> materials = [];
   final List<Customer> customers = [];
+  final List<StudioProduct> products = [];
+  final List<BusinessExpense> expenses = [];
   final Set<String> _pendingOrders = {};
   final Set<String> _pendingCustomers = {};
   final Set<String> _deletedCustomers = {};
+  final Set<String> _pendingProducts = {}, _deletedProducts = {};
+  final Set<String> _pendingExpenses = {}, _deletedExpenses = {};
   final Set<String> _pendingMaterials = {};
   final Set<String> _deletedOrders = {};
   final Set<String> _deletedMaterials = {};
   final Map<String, int> _orderVersions = {};
   final Map<String, int> _customerVersions = {};
+  final Map<String, int> _productVersions = {}, _expenseVersions = {};
   final Map<String, int> _materialVersions = {};
   Timer? _syncTimer;
   bool loading = true;
@@ -222,7 +268,12 @@ class StudioStore extends ChangeNotifier {
   File? _file;
   Future<void> _writeChain = Future<void>.value();
 
-  bool get hasPendingWrites => _pendingOrders.isNotEmpty || _pendingMaterials.isNotEmpty || _pendingCustomers.isNotEmpty || _deletedCustomers.isNotEmpty;
+  bool get hasPendingWrites =>
+    _pendingOrders.isNotEmpty || _pendingMaterials.isNotEmpty ||
+    _pendingCustomers.isNotEmpty || _deletedCustomers.isNotEmpty ||
+    _deletedOrders.isNotEmpty || _deletedMaterials.isNotEmpty ||
+    _pendingProducts.isNotEmpty || _deletedProducts.isNotEmpty ||
+    _pendingExpenses.isNotEmpty || _deletedExpenses.isNotEmpty;
   void _notify() { if (!_disposed) notifyListeners(); }
 
   Future<void> load() async {
@@ -238,6 +289,20 @@ class StudioStore extends ChangeNotifier {
           (e) => Material.fromJson(Map<String, dynamic>.from(e as Map))));
         customers.addAll((raw['customers'] as List<dynamic>? ?? []).map(
           (e) => Customer.fromJson(Map<String, dynamic>.from(e as Map))));
+        products.addAll((raw['products'] as List<dynamic>? ?? []).map(
+          (e) => StudioProduct.fromJson(Map<String, dynamic>.from(e as Map))));
+        expenses.addAll((raw['expenses'] as List<dynamic>? ?? []).map(
+          (e) => BusinessExpense.fromJson(Map<String, dynamic>.from(e as Map))));
+        _pendingProducts.addAll(List<String>.from(raw['pendingProducts'] as List? ?? []));
+        _deletedProducts.addAll(List<String>.from(raw['deletedProducts'] as List? ?? []));
+        _pendingExpenses.addAll(List<String>.from(raw['pendingExpenses'] as List? ?? []));
+        _deletedExpenses.addAll(List<String>.from(raw['deletedExpenses'] as List? ?? []));
+        for (final e in (raw['productVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _productVersions[e.key] = (e.value as num).toInt();
+        }
+        for (final e in (raw['expenseVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _expenseVersions[e.key] = (e.value as num).toInt();
+        }
         _pendingCustomers.addAll(List<String>.from(raw['pendingCustomers'] as List? ?? []));
         _deletedCustomers.addAll(List<String>.from(raw['deletedCustomers'] as List? ?? []));
         for (final entry in (raw['customerVersions'] as Map<String, dynamic>? ?? {}).entries) {
@@ -272,6 +337,11 @@ class StudioStore extends ChangeNotifier {
       'orders': orders.map((e) => e.toJson()).toList(),
       'materials': materials.map((e) => e.toJson()).toList(),
       'customers': customers.map((e) => e.toJson()).toList(),
+      'products': products.map((e) => e.toJson()).toList(),
+      'expenses': expenses.map((e) => e.toJson()).toList(),
+      'pendingProducts': _pendingProducts.toList(), 'deletedProducts': _deletedProducts.toList(),
+      'pendingExpenses': _pendingExpenses.toList(), 'deletedExpenses': _deletedExpenses.toList(),
+      'productVersions': _productVersions, 'expenseVersions': _expenseVersions,
       'pendingCustomers': _pendingCustomers.toList(),
       'deletedCustomers': _deletedCustomers.toList(),
       'customerVersions': _customerVersions,
@@ -378,6 +448,27 @@ class StudioStore extends ChangeNotifier {
     if (o.customerId.isNotEmpty) { _pendingCustomers.add(o.customerId); await _saveLocal(); unawaited(syncNow()); }
   }
   Future<void> addMaterial(Material m) async { materials.add(m); await _save(materialId: m.id); }
+
+  Future<void> addProduct(StudioProduct p) async {
+    products.add(p); _pendingProducts.add(p.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> updateProduct(StudioProduct p) async {
+    _pendingProducts.add(p.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> deleteProduct(StudioProduct p) async {
+    products.removeWhere((x) => x.id == p.id); _pendingProducts.remove(p.id);
+    _deletedProducts.add(p.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> addExpense(BusinessExpense e) async {
+    expenses.add(e); _pendingExpenses.add(e.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> updateExpense(BusinessExpense e) async {
+    _pendingExpenses.add(e.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> deleteExpense(BusinessExpense e) async {
+    expenses.removeWhere((x) => x.id == e.id); _pendingExpenses.remove(e.id);
+    _deletedExpenses.add(e.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
   Future<void> updateMaterial(Material m) async => _save(materialId: m.id);
 
   /// Soft-delete cloud records with tombstones so they do not reappear on another device.
@@ -418,6 +509,14 @@ class StudioStore extends ChangeNotifier {
     _notify();
     var conflict = false;
     try {
+      for (final id in _deletedProducts.toList()) {
+        final version = await _cloud.put('products', id, {'id': id, '_deleted': true}, _productVersions[id] ?? 0);
+        _productVersions[id] = version; _deletedProducts.remove(id);
+      }
+      for (final id in _deletedExpenses.toList()) {
+        final version = await _cloud.put('expenses', id, {'id': id, '_deleted': true}, _expenseVersions[id] ?? 0);
+        _expenseVersions[id] = version; _deletedExpenses.remove(id);
+      }
       for (final id in _deletedCustomers.toList()) {
         final version = await _cloud.put('customers', id, {'id': id, '_deleted': true}, _customerVersions[id] ?? 0);
         _customerVersions[id] = version;
@@ -432,6 +531,22 @@ class StudioStore extends ChangeNotifier {
         final version = await _cloud.put('orders', id, {'id': id, '_deleted': true}, _orderVersions[id] ?? 0);
         _orderVersions[id] = version;
         _deletedOrders.remove(id);
+      }
+      for (final id in _pendingProducts.toList()) {
+        final item = products.where((p) => p.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('products', id, item.first.toJson(), _productVersions[id] ?? 0);
+          _productVersions[id] = version; _pendingProducts.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
+      }
+      for (final id in _pendingExpenses.toList()) {
+        final item = expenses.where((p) => p.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('expenses', id, item.first.toJson(), _expenseVersions[id] ?? 0);
+          _expenseVersions[id] = version; _pendingExpenses.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
       }
       for (final id in _pendingCustomers.toList()) {
         final matches = customers.where((c) => c.id == id);
@@ -488,6 +603,24 @@ class StudioStore extends ChangeNotifier {
           if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; }
           rethrow;
         }
+      }
+      final remoteProducts = await _cloud.list('products');
+      for (final r in remoteProducts) {
+        if (r.payload['_deleted'] == true) { products.removeWhere((p) => p.id == r.id); _pendingProducts.remove(r.id); _deletedProducts.remove(r.id); _productVersions[r.id] = r.version; continue; }
+        if (_pendingProducts.contains(r.id) || _deletedProducts.contains(r.id)) continue;
+        final idx = products.indexWhere((p) => p.id == r.id);
+        final item = StudioProduct.fromJson(r.payload);
+        if (idx < 0) { products.add(item); } else { products[idx] = item; }
+        _productVersions[r.id] = r.version;
+      }
+      final remoteExpenses = await _cloud.list('expenses');
+      for (final r in remoteExpenses) {
+        if (r.payload['_deleted'] == true) { expenses.removeWhere((e) => e.id == r.id); _pendingExpenses.remove(r.id); _deletedExpenses.remove(r.id); _expenseVersions[r.id] = r.version; continue; }
+        if (_pendingExpenses.contains(r.id) || _deletedExpenses.contains(r.id)) continue;
+        final idx = expenses.indexWhere((e) => e.id == r.id);
+        final item = BusinessExpense.fromJson(r.payload);
+        if (idx < 0) { expenses.add(item); } else { expenses[idx] = item; }
+        _expenseVersions[r.id] = r.version;
       }
       final remoteCustomers = await _cloud.list('customers');
       for (final r in remoteCustomers) {
