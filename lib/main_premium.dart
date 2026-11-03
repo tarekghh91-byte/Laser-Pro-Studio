@@ -1215,6 +1215,30 @@ class ReportsPage extends StatelessWidget {
     final todayExpenses = store.expenses.where((e) =>
       e.expenseDate.year == now.year && e.expenseDate.month == now.month &&
       e.expenseDate.day == now.day).toList();
+    final monthPurchases = store.purchases.where((p) =>
+      p.purchaseDate.year == now.year && p.purchaseDate.month == now.month).toList();
+    final todayPurchases = store.purchases.where((p) =>
+      p.purchaseDate.year == now.year && p.purchaseDate.month == now.month &&
+      p.purchaseDate.day == now.day).toList();
+    Widget stockPurchaseReportCard(String title, List<core.StockPurchase> items, IconData icon) {
+      final total = items.fold<double>(0, (v, p) => v + p.totalAmount);
+      return Card(child: InkWell(borderRadius: BorderRadius.circular(17),
+        onTap: () => showDialog<void>(context: context, builder: (ctx) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(title: Text(title), content: SizedBox(width: 460,
+            child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('إجمالي استلام المخزون: ${core.money(total)}',
+                style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+              const Divider(),
+              if (items.isEmpty) const EmptyState('لا توجد مشتريات ضمن هذه الفترة.'),
+              for (final p in items) ListTile(title: Text(p.materialName),
+                subtitle: Text('${p.supplierName} • ${p.packageCount.toStringAsFixed(2)} عبوة • ${p.purchaseDate.toLocal().toString().substring(0, 10)}'),
+                trailing: Text(core.money(p.totalAmount))),
+            ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))]))),
+        child: ListTile(leading: Icon(icon, color: gold), title: Text(title),
+          subtitle: Text('${items.length} استلام مخزون — لا يُخصم كمصروف تشغيلي'),
+          trailing: Text(core.money(total), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)))));
+    }
     Widget expenseReportCard(String title, List<core.BusinessExpense> items, IconData icon) {
       final total = items.fold<double>(0, (v, e) => v + e.amount);
       return Card(child: InkWell(borderRadius: BorderRadius.circular(17),
@@ -1269,6 +1293,7 @@ class ReportsPage extends StatelessWidget {
       const SizedBox(height: 14),
       reportCard('تقرير اليوم', today, Icons.today_rounded),
       expenseReportCard('مصاريف اليوم', todayExpenses, Icons.receipt_long_outlined),
+      stockPurchaseReportCard('استلامات المخزون اليوم', todayPurchases, Icons.inventory_2_outlined),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
         const Expanded(child: Text('نتيجة اليوم بعد المصاريف', style: TextStyle(fontWeight: FontWeight.w900))),
         Text(core.money(today.fold<double>(0, (v, o) => v + o.grossMargin) -
@@ -1277,6 +1302,7 @@ class ReportsPage extends StatelessWidget {
       ]))),
       reportCard('تقرير الشهر', month, Icons.calendar_month_rounded),
       expenseReportCard('مصاريف الشهر', monthExpenses, Icons.calendar_month_outlined),
+      stockPurchaseReportCard('استلامات المخزون هذا الشهر', monthPurchases, Icons.inventory_2_outlined),
       Card(child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
         const Expanded(child: Text('نتيجة الشهر بعد المصاريف', style: TextStyle(fontWeight: FontWeight.w900))),
         Text(core.money(month.fold<double>(0, (v, o) => v + o.grossMargin) -
