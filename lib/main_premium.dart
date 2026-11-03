@@ -930,12 +930,46 @@ class SuppliersPurchasesPage extends StatelessWidget {
       if (suppliers.isEmpty) const EmptyState('أضف بيانات المورّد أولاً لتربط فواتير الشراء به.'),
       for (final s in suppliers) Card(margin: const EdgeInsets.only(bottom: 7),
         child: ListTile(
+          onTap: () {
+            final ledger = purchases.where((p) => p.supplierId == s.id).toList();
+            final billed = ledger.fold<double>(0, (v, p) => v + p.totalAmount);
+            final paid = ledger.fold<double>(0, (v, p) => v + p.paidAmount);
+            final due = ledger.fold<double>(0, (v, p) => v + p.outstanding);
+            showDialog<void>(context: context, builder: (ctx) => Directionality(
+              textDirection: TextDirection.rtl,
+              child: AlertDialog(title: Text('حساب المورّد: ${s.name}'),
+                content: SizedBox(width: 460, child: SingleChildScrollView(child: Column(
+                  mainAxisSize: MainAxisSize.min, children: [
+                    _FinanceLine('إجمالي الفواتير', core.money(billed)),
+                    _FinanceLine('إجمالي المدفوع', core.money(paid)),
+                    _FinanceLine('الرصيد المستحق', core.money(due), strong: true),
+                    const Divider(),
+                    if (ledger.isEmpty) const EmptyState('لا توجد فواتير لهذا المورّد.'),
+                    for (final invoice in ledger) Card(child: ExpansionTile(
+                      title: Text(invoice.materialName),
+                      subtitle: Text('فاتورة ${invoice.invoiceNumber.isEmpty ? '—' : invoice.invoiceNumber} • ${invoice.purchaseDate.toLocal().toString().substring(0, 10)}'),
+                      trailing: Text(core.money(invoice.outstanding),
+                        style: TextStyle(color: invoice.outstanding > 0 ? Colors.orangeAccent : gold,
+                          fontWeight: FontWeight.w900)),
+                      children: [
+                        ListTile(title: const Text('قيمة الفاتورة'), trailing: Text(core.money(invoice.totalAmount))),
+                        ListTile(title: const Text('المدفوع'), trailing: Text(core.money(invoice.paidAmount))),
+                        for (final payment in invoice.payments) ListTile(
+                          dense: true, leading: const Icon(Icons.payments_outlined, color: gold, size: 18),
+                          title: Text(core.money(payment.amount)),
+                          subtitle: Text('${payment.method} • ${payment.paidAt.toLocal().toString().substring(0, 16)}${payment.notes.isEmpty ? '' : ' • ${payment.notes}'}')),
+                      ],
+                    )),
+                  ]))),
+                actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))])));
+          },
           leading: CircleAvatar(backgroundColor: raised, child: Icon(Icons.storefront_outlined,
             color: s.active ? gold : muted)),
           title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text([
             if (s.phone.isNotEmpty) s.phone,
             if (s.address.isNotEmpty) s.address,
+            'مدفوع: ${core.money(purchases.where((p) => p.supplierId == s.id).fold<double>(0, (v, p) => v + p.paidAmount))}',
             'مستحق: ${core.money(purchases.where((p) => p.supplierId == s.id).fold<double>(0, (v, p) => v + p.outstanding))}',
             if (!s.active) 'موقوف'
           ].join(' • '), style: const TextStyle(color: muted, fontSize: 10)),
