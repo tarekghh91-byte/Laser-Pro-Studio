@@ -455,7 +455,7 @@ String _cleanCommand(String value) {
   }
   const stopWords = {'شو', 'قديش', 'كم', 'وين', 'الطلبات', 'طلبات', 'الطلب',
     'طلب', 'الزبون', 'العميل', 'اسم', 'تفاصيل', 'تفصيل', 'عندي'};
-  return q.split(RegExp(r'\\s+')).where((word) => word.isNotEmpty && !stopWords.contains(word)).join(' ').trim();
+  return q.split(RegExp(r'\s+')).where((word) => word.isNotEmpty && !stopWords.contains(word)).join(' ').trim();
 }
 
 
@@ -478,7 +478,7 @@ class CustomersPage extends StatelessWidget {
     final groups = <String, List<core.Order>>{};
     for (final order in store.orders) {
       final key = order.phone.trim().isNotEmpty
-        ? order.phone.replaceAll(RegExp(r'\\s+'), '')
+        ? order.phone.replaceAll(RegExp(r'\s+'), '')
         : _normalizeArabic(order.customer);
       groups.putIfAbsent(key, () => []).add(order);
     }
@@ -836,7 +836,7 @@ class SearchPage extends StatelessWidget {
     final commandActive = q.contains('قيد التنفيذ') || q.contains('عم ينفذ') || q.contains('شغال');
     final commandDelivered = q.contains('تم التسليم') || q.contains('تسلم') || q.contains('مستلم');
     final commandLate = q.contains('متاخر') || q.contains('تاخر');
-    final commandDue = q.contains('لازم سلم') || q.contains('تسليم اليوم') || q.contains('موعد') || q == 'اليوم';
+    final commandDue = q.contains('لازم سلم') || q.contains('تسليم اليوم') || q.contains('موعد') || q == 'اليوم' || (q.contains('اليوم') && q.contains('تسليم'));
     final commandStock = q.contains('مخزون') || q.contains('مواد') || q.contains('ناقص') || q.contains('اشتري');
     final commandLowStock = q.contains('ناقص') || q.contains('اشتري') || q.contains('خلص');
     final commandDebt = q.contains('باقي') || q.contains('مستحق') || q.contains('دين') ||
