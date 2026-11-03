@@ -1047,7 +1047,6 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
   final quantity = TextEditingController(text: existing?.quantity.toString() ?? '1');
   final product = TextEditingController(text: existing?.product ?? '');
   final price = TextEditingController(text: existing?.price.toStringAsFixed(2) ?? '0');
-  final paid = TextEditingController(text: existing?.paid.toStringAsFixed(2) ?? '0');
   final laserMinutes = TextEditingController(text: existing?.laserMinutes.toStringAsFixed(0) ?? '0');
   final used = List<UsedMaterial>.of(existing?.usedMaterials ?? const <UsedMaterial>[]);
   final notes = TextEditingController(text: existing?.notes ?? '');
@@ -1086,7 +1085,8 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
                 validator: (v) => (double.tryParse(v ?? '') ?? -1) < 0 ? 'أدخل سعر بيع صحيح' : null,
                 onChanged: (_) => setForm(() {})),
               const SizedBox(height: 10),
-              _field('الدفعة المقبوضة', paid, numeric: true),
+              Text('المقبوض حتى الآن: ${money(existing.paid)} — أضف الدفعات من سجل الطلب.',
+                style: const TextStyle(color: Colors.white70, fontSize: 11)),
               const SizedBox(height: 12),
               const Text('المواد المستخدمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
               if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
@@ -1137,11 +1137,10 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
             FilledButton(onPressed: () async {
               if (!key.currentState!.validate()) return;
               final p = double.tryParse(price.text) ?? -1;
-              final a = double.tryParse(paid.text) ?? -1;
               final duration = double.tryParse(laserMinutes.text) ?? -1;
               final qty = int.tryParse(quantity.text) ?? 0;
-              if (p < 0 || a < 0 || a > p || duration < 0 || !duration.isFinite || qty < 1) {
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر والدفعة والكمية ودقائق الليزر')));
+              if (p < 0 || (existing != null && p + 0.000001 < existing.paid) || duration < 0 || !duration.isFinite || qty < 1) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر (لا يمكن أن يقل عن المقبوض) والكمية ودقائق الليزر')));
                 return;
               }
               try {
@@ -1149,7 +1148,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
                   await store.addOrder(Order(id: const Uuid().v4(),
                     customer: customer.text.trim(), product: product.text.trim(),
                     phone: phone.text.trim(), address: address.text.trim(), quantity: qty, orderDate: orderDate,
-                    dueDate: due, price: p, paid: a, materialCost: materialCost,
+                    dueDate: due, price: p, paid: 0, materialCost: materialCost,
                     usedMaterials: List.of(used), laserMinutes: duration,
                     electricCost: laserElectricity(duration),
                     status: 'قيد التنفيذ', createdAt: DateTime.now(), notes: notes.text.trim()));
@@ -1160,7 +1159,6 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
                   existing.product = product.text.trim();
                   existing.dueDate = due;
                   existing.price = p;
-                  existing.paid = a;
                   existing.materialCost = materialCost;
                   existing.usedMaterials = List.of(used);
                   existing.laserMinutes = duration;
@@ -1173,7 +1171,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
             }, child: const Text('حفظ الطلب')),
           ]));
     }));
-  for (final c in [customer, phone, address, quantity, product, price, paid, laserMinutes, notes]) { c.dispose(); }
+  for (final c in [customer, phone, address, quantity, product, price, laserMinutes, notes]) { c.dispose(); }
 }
 Widget _field(String label, TextEditingController controller,
     {bool numeric = false, bool required = false}) => Padding(
