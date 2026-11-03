@@ -1176,7 +1176,7 @@ class SuppliersPurchasesPage extends StatelessWidget {
               (double.tryParse(amount.text.replaceAll(',', '.')) ?? 0) <= purchase.outstanding
               ? () => Navigator.pop(ctx, true) : null, child: const Text('حفظ الدفعة')),
           ],
-        )));
+        ))));
     if (result == true) {
       try {
         await store.addSupplierPayment(purchase, core.SupplierPaymentEntry(
