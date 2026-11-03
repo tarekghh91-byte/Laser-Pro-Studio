@@ -7,8 +7,9 @@ class CloudRecord {
   final int version;
 }
 
-/// Per-user documents with optimistic concurrency (no silent last-write-wins).
-/// This is phase-one sync for orders and materials, not the final accounting model.
+/// Per-user records with optimistic concurrency (no silent last-write-wins).
+/// Orders, materials, customers, products, expenses, suppliers and purchases use this layer.
+/// Conflicts are surfaced to the user instead of silently overwriting another device.
 class CloudSync {
   CloudSync(this.ownerId);
   final String ownerId;
