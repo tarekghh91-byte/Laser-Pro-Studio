@@ -197,6 +197,57 @@ class Material {
   );
 }
 
+class Supplier {
+  Supplier({required this.id, required this.name, this.phone = '', this.address = '',
+    this.notes = '', this.active = true, DateTime? createdAt})
+      : createdAt = createdAt ?? DateTime.now();
+  final String id;
+  String name, phone, address, notes;
+  bool active;
+  DateTime createdAt;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'phone': phone,
+    'address': address, 'notes': notes, 'active': active,
+    'createdAt': createdAt.toIso8601String()};
+  factory Supplier.fromJson(Map<String, dynamic> j) => Supplier(
+    id: j['id'] as String, name: j['name'] as String? ?? '',
+    phone: j['phone'] as String? ?? '', address: j['address'] as String? ?? '',
+    notes: j['notes'] as String? ?? '', active: j['active'] as bool? ?? true,
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''));
+}
+
+class StockPurchase {
+  StockPurchase({required this.id, required this.supplierId, required this.supplierName,
+    required this.materialId, required this.materialName, required this.packageCount,
+    required this.packUnits, required this.baseQuantity, required this.packageCost,
+    required this.unitCost, required this.totalAmount, required this.paymentMethod,
+    required this.invoiceNumber, required this.purchaseDate, this.notes = ''});
+  final String id;
+  final String supplierId, supplierName, materialId, materialName;
+  final double packageCount, packUnits, baseQuantity, packageCost, unitCost, totalAmount;
+  final String paymentMethod, invoiceNumber, notes;
+  final DateTime purchaseDate;
+  Map<String, dynamic> toJson() => {'id': id, 'supplierId': supplierId,
+    'supplierName': supplierName, 'materialId': materialId, 'materialName': materialName,
+    'packageCount': packageCount, 'packUnits': packUnits, 'baseQuantity': baseQuantity,
+    'packageCost': packageCost, 'unitCost': unitCost, 'totalAmount': totalAmount,
+    'paymentMethod': paymentMethod, 'invoiceNumber': invoiceNumber,
+    'purchaseDate': purchaseDate.toIso8601String(), 'notes': notes};
+  factory StockPurchase.fromJson(Map<String, dynamic> j) => StockPurchase(
+    id: j['id'] as String, supplierId: j['supplierId'] as String? ?? '',
+    supplierName: j['supplierName'] as String? ?? '',
+    materialId: j['materialId'] as String, materialName: j['materialName'] as String? ?? '',
+    packageCount: (j['packageCount'] as num? ?? 0).toDouble(),
+    packUnits: (j['packUnits'] as num? ?? 1).toDouble(),
+    baseQuantity: (j['baseQuantity'] as num? ?? 0).toDouble(),
+    packageCost: (j['packageCost'] as num? ?? 0).toDouble(),
+    unitCost: (j['unitCost'] as num? ?? 0).toDouble(),
+    totalAmount: (j['totalAmount'] as num? ?? 0).toDouble(),
+    paymentMethod: j['paymentMethod'] as String? ?? 'نقداً',
+    invoiceNumber: j['invoiceNumber'] as String? ?? '',
+    purchaseDate: DateTime.tryParse(j['purchaseDate'] as String? ?? '') ?? DateTime.now(),
+    notes: j['notes'] as String? ?? '');
+}
+
 class StudioProduct {
   StudioProduct({required this.id, required this.name, this.category = 'مجسمات',
     this.size = '', this.description = '', required this.salePrice,
@@ -247,17 +298,22 @@ class StudioStore extends ChangeNotifier {
   final List<Customer> customers = [];
   final List<StudioProduct> products = [];
   final List<BusinessExpense> expenses = [];
+  final List<Supplier> suppliers = [];
+  final List<StockPurchase> purchases = [];
   final Set<String> _pendingOrders = {};
   final Set<String> _pendingCustomers = {};
   final Set<String> _deletedCustomers = {};
   final Set<String> _pendingProducts = {}, _deletedProducts = {};
   final Set<String> _pendingExpenses = {}, _deletedExpenses = {};
+  final Set<String> _pendingSuppliers = {}, _deletedSuppliers = {};
+  final Set<String> _pendingPurchases = {}, _deletedPurchases = {};
   final Set<String> _pendingMaterials = {};
   final Set<String> _deletedOrders = {};
   final Set<String> _deletedMaterials = {};
   final Map<String, int> _orderVersions = {};
   final Map<String, int> _customerVersions = {};
   final Map<String, int> _productVersions = {}, _expenseVersions = {};
+  final Map<String, int> _supplierVersions = {}, _purchaseVersions = {};
   final Map<String, int> _materialVersions = {};
   Timer? _syncTimer;
   bool loading = true;
@@ -273,7 +329,9 @@ class StudioStore extends ChangeNotifier {
     _pendingCustomers.isNotEmpty || _deletedCustomers.isNotEmpty ||
     _deletedOrders.isNotEmpty || _deletedMaterials.isNotEmpty ||
     _pendingProducts.isNotEmpty || _deletedProducts.isNotEmpty ||
-    _pendingExpenses.isNotEmpty || _deletedExpenses.isNotEmpty;
+    _pendingExpenses.isNotEmpty || _deletedExpenses.isNotEmpty ||
+    _pendingSuppliers.isNotEmpty || _deletedSuppliers.isNotEmpty ||
+    _pendingPurchases.isNotEmpty || _deletedPurchases.isNotEmpty;
   void _notify() { if (!_disposed) notifyListeners(); }
 
   Future<void> load() async {
@@ -293,6 +351,20 @@ class StudioStore extends ChangeNotifier {
           (e) => StudioProduct.fromJson(Map<String, dynamic>.from(e as Map))));
         expenses.addAll((raw['expenses'] as List<dynamic>? ?? []).map(
           (e) => BusinessExpense.fromJson(Map<String, dynamic>.from(e as Map))));
+        suppliers.addAll((raw['suppliers'] as List<dynamic>? ?? []).map(
+          (e) => Supplier.fromJson(Map<String, dynamic>.from(e as Map))));
+        purchases.addAll((raw['purchases'] as List<dynamic>? ?? []).map(
+          (e) => StockPurchase.fromJson(Map<String, dynamic>.from(e as Map))));
+        _pendingSuppliers.addAll(List<String>.from(raw['pendingSuppliers'] as List? ?? []));
+        _deletedSuppliers.addAll(List<String>.from(raw['deletedSuppliers'] as List? ?? []));
+        _pendingPurchases.addAll(List<String>.from(raw['pendingPurchases'] as List? ?? []));
+        _deletedPurchases.addAll(List<String>.from(raw['deletedPurchases'] as List? ?? []));
+        for (final e in (raw['supplierVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _supplierVersions[e.key] = (e.value as num).toInt();
+        }
+        for (final e in (raw['purchaseVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _purchaseVersions[e.key] = (e.value as num).toInt();
+        }
         _pendingProducts.addAll(List<String>.from(raw['pendingProducts'] as List? ?? []));
         _deletedProducts.addAll(List<String>.from(raw['deletedProducts'] as List? ?? []));
         _pendingExpenses.addAll(List<String>.from(raw['pendingExpenses'] as List? ?? []));
@@ -333,12 +405,17 @@ class StudioStore extends ChangeNotifier {
 
   Future<void> _saveLocal() {
     final content = jsonEncode({
-      'schemaVersion': 4,
+      'schemaVersion': 5,
       'orders': orders.map((e) => e.toJson()).toList(),
       'materials': materials.map((e) => e.toJson()).toList(),
       'customers': customers.map((e) => e.toJson()).toList(),
       'products': products.map((e) => e.toJson()).toList(),
       'expenses': expenses.map((e) => e.toJson()).toList(),
+      'suppliers': suppliers.map((e) => e.toJson()).toList(),
+      'purchases': purchases.map((e) => e.toJson()).toList(),
+      'pendingSuppliers': _pendingSuppliers.toList(), 'deletedSuppliers': _deletedSuppliers.toList(),
+      'pendingPurchases': _pendingPurchases.toList(), 'deletedPurchases': _deletedPurchases.toList(),
+      'supplierVersions': _supplierVersions, 'purchaseVersions': _purchaseVersions,
       'pendingProducts': _pendingProducts.toList(), 'deletedProducts': _deletedProducts.toList(),
       'pendingExpenses': _pendingExpenses.toList(), 'deletedExpenses': _deletedExpenses.toList(),
       'productVersions': _productVersions, 'expenseVersions': _expenseVersions,
@@ -449,6 +526,40 @@ class StudioStore extends ChangeNotifier {
   }
   Future<void> addMaterial(Material m) async { materials.add(m); await _save(materialId: m.id); }
 
+  Future<void> addSupplier(Supplier s) async {
+    suppliers.add(s); _pendingSuppliers.add(s.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> updateSupplier(Supplier s) async {
+    _pendingSuppliers.add(s.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> recordPurchase(StockPurchase p) async {
+    final found = materials.where((m) => m.id == p.materialId);
+    if (found.isEmpty) throw StateError('المادة غير موجودة بالمخزون');
+    if (p.packageCount <= 0 || p.packUnits <= 0 || p.packageCost < 0 ||
+        !p.packageCount.isFinite || !p.packUnits.isFinite || !p.packageCost.isFinite) {
+      throw ArgumentError('راجع كمية الشراء وسعر العبوة');
+    }
+    final material = found.first;
+    final oldValue = material.quantity * material.unitCost;
+    final newQty = p.baseQuantity;
+    final newValue = newQty * p.unitCost;
+    final combinedQty = material.quantity + newQty;
+    material.quantity = combinedQty;
+    if (combinedQty > 0) material.unitCost = (oldValue + newValue) / combinedQty;
+    purchases.add(p);
+    _pendingMaterials.add(material.id); _pendingPurchases.add(p.id);
+    try {
+      await _saveLocal(); _notify(); unawaited(syncNow());
+    } catch (_) {
+      material.quantity -= newQty;
+      material.unitCost = combinedQty > newQty && material.quantity > 0
+        ? (oldValue / material.quantity) : material.unitCost;
+      purchases.removeWhere((x) => x.id == p.id);
+      _pendingMaterials.remove(material.id); _pendingPurchases.remove(p.id);
+      rethrow;
+    }
+  }
+
   Future<void> addProduct(StudioProduct p) async {
     products.add(p); _pendingProducts.add(p.id); await _saveLocal(); _notify(); unawaited(syncNow());
   }
@@ -509,6 +620,14 @@ class StudioStore extends ChangeNotifier {
     _notify();
     var conflict = false;
     try {
+      for (final id in _deletedSuppliers.toList()) {
+        final version = await _cloud.put('suppliers', id, {'id': id, '_deleted': true}, _supplierVersions[id] ?? 0);
+        _supplierVersions[id] = version; _deletedSuppliers.remove(id);
+      }
+      for (final id in _deletedPurchases.toList()) {
+        final version = await _cloud.put('purchases', id, {'id': id, '_deleted': true}, _purchaseVersions[id] ?? 0);
+        _purchaseVersions[id] = version; _deletedPurchases.remove(id);
+      }
       for (final id in _deletedProducts.toList()) {
         final version = await _cloud.put('products', id, {'id': id, '_deleted': true}, _productVersions[id] ?? 0);
         _productVersions[id] = version; _deletedProducts.remove(id);
@@ -531,6 +650,22 @@ class StudioStore extends ChangeNotifier {
         final version = await _cloud.put('orders', id, {'id': id, '_deleted': true}, _orderVersions[id] ?? 0);
         _orderVersions[id] = version;
         _deletedOrders.remove(id);
+      }
+      for (final id in _pendingSuppliers.toList()) {
+        final item = suppliers.where((s) => s.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('suppliers', id, item.first.toJson(), _supplierVersions[id] ?? 0);
+          _supplierVersions[id] = version; _pendingSuppliers.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
+      }
+      for (final id in _pendingPurchases.toList()) {
+        final item = purchases.where((p) => p.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('purchases', id, item.first.toJson(), _purchaseVersions[id] ?? 0);
+          _purchaseVersions[id] = version; _pendingPurchases.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
       }
       for (final id in _pendingProducts.toList()) {
         final item = products.where((p) => p.id == id);
@@ -603,6 +738,24 @@ class StudioStore extends ChangeNotifier {
           if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; }
           rethrow;
         }
+      }
+      final remoteSuppliers = await _cloud.list('suppliers');
+      for (final r in remoteSuppliers) {
+        if (r.payload['_deleted'] == true) { suppliers.removeWhere((s) => s.id == r.id); _pendingSuppliers.remove(r.id); _deletedSuppliers.remove(r.id); _supplierVersions[r.id] = r.version; continue; }
+        if (_pendingSuppliers.contains(r.id) || _deletedSuppliers.contains(r.id)) continue;
+        final idx = suppliers.indexWhere((s) => s.id == r.id);
+        final item = Supplier.fromJson(r.payload);
+        if (idx < 0) { suppliers.add(item); } else { suppliers[idx] = item; }
+        _supplierVersions[r.id] = r.version;
+      }
+      final remotePurchases = await _cloud.list('purchases');
+      for (final r in remotePurchases) {
+        if (r.payload['_deleted'] == true) { purchases.removeWhere((p) => p.id == r.id); _pendingPurchases.remove(r.id); _deletedPurchases.remove(r.id); _purchaseVersions[r.id] = r.version; continue; }
+        if (_pendingPurchases.contains(r.id) || _deletedPurchases.contains(r.id)) continue;
+        final idx = purchases.indexWhere((p) => p.id == r.id);
+        final item = StockPurchase.fromJson(r.payload);
+        if (idx < 0) { purchases.add(item); } else { purchases[idx] = item; }
+        _purchaseVersions[r.id] = r.version;
       }
       final remoteProducts = await _cloud.list('products');
       for (final r in remoteProducts) {
