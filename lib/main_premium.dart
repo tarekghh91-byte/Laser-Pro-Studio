@@ -793,7 +793,7 @@ class ExpensesPage extends StatelessWidget {
       Row(children: [
         const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('سجل المصاريف', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
-          SizedBox(height: 4), Text('سجّل مصاريف التشغيل والمشتريات خارج الطلبات.',
+          SizedBox(height: 4), Text('سجّل الإيجار والنقل والصيانة والتسويق والمصاريف التشغيلية.',
             style: TextStyle(color: muted, fontSize: 11)),
         ])),
         FilledButton.icon(onPressed: () => _edit(context), icon: const Icon(Icons.add),
@@ -899,6 +899,8 @@ class PremiumAccountsPage extends StatelessWidget {
     final sales = completed.fold<double>(0, (v, o) => v + o.price);
     final paid = completed.fold<double>(0, (v, o) => v + o.paid);
     final costs = completed.fold<double>(0, (v, o) => v + o.totalCost);
+    final operatingExpenses = store.expenses.fold<double>(0, (v, e) => v + e.amount);
+    final netOperating = sales - costs - operatingExpenses;
     final outstanding = completed.fold<double>(0, (v, o) => v + (o.outstanding > 0 ? o.outstanding : 0));
     void showOrders(String title, List<core.Order> items) {
       showDialog<void>(context: context, builder: (ctx) => Directionality(
@@ -939,7 +941,33 @@ class PremiumAccountsPage extends StatelessWidget {
           ])),
         )),
       const SizedBox(height: 8),
-      Text('الحسابات تحتسب الطلبات التي تم تسليمها فقط. الربح المعروض بعد المواد والتغليف والكهرباء، وقبل المصاريف العامة وأجرة وقت العمل. عدد الطلبات المحتسبة: ${completed.length}.',
+      Card(child: InkWell(borderRadius: BorderRadius.circular(17),
+        onTap: () => showDialog<void>(context: context, builder: (ctx) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(title: const Text('سجل المصاريف التشغيلية'),
+            content: SizedBox(width: 450, child: SingleChildScrollView(child: Column(
+              mainAxisSize: MainAxisSize.min, children: [
+                if (store.expenses.isEmpty) const EmptyState('لا توجد مصاريف مسجلة.'),
+                for (final e in store.expenses)
+                  ListTile(title: Text(e.title), subtitle: Text('${e.category} • ${e.expenseDate.toLocal().toString().substring(0, 10)}'),
+                    trailing: Text(core.money(e.amount), style: const TextStyle(color: gold))),
+              ],
+            ))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))]))),
+        child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [
+          const Icon(Icons.receipt_long_outlined, color: gold),
+          const SizedBox(width: 11),
+          const Expanded(child: Text('المصاريف التشغيلية المسجلة', style: TextStyle(fontWeight: FontWeight.w800))),
+          Text(core.money(operatingExpenses), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+          const Icon(Icons.chevron_left_rounded, color: muted),
+        ])))),
+      Card(child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [
+        const Expanded(child: Text('صافي النتيجة بعد المصاريف المسجلة',
+          style: TextStyle(fontWeight: FontWeight.w900))),
+        Text(core.money(netOperating), style: TextStyle(color: netOperating >= 0 ? gold : Colors.redAccent,
+          fontWeight: FontWeight.w900, fontSize: 17)),
+      ]))),
+      const SizedBox(height: 8),
+      Text('الربح المباشر يطرح المواد والتغليف والكهرباء. صافي النتيجة يطرح أيضاً كل المصاريف التشغيلية المسجلة. لا يشمل بعد أجرة وقت العمل أو الالتزامات غير المسجلة. عدد الطلبات المحتسبة: ${completed.length}.',
         style: const TextStyle(color: muted, fontSize: 10)),
     ]);
   }
