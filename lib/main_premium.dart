@@ -459,83 +459,110 @@ String _cleanCommand(String value) {
 }
 
 
-class _CustomerRecord {
-  _CustomerRecord(this.key, this.name, this.phone, this.address, this.orders);
-  final String key;
-  final String name;
-  final String phone;
-  final String address;
-  final List<core.Order> orders;
-  double get sales => orders.fold<double>(0, (v, o) => v + o.price);
-  double get balance => orders.fold<double>(0, (v, o) => v + (o.outstanding > 0 ? o.outstanding : 0));
-}
-
 class CustomersPage extends StatelessWidget {
   const CustomersPage({super.key, required this.store});
   final core.StudioStore store;
 
-  List<_CustomerRecord> _records() {
-    final groups = <String, List<core.Order>>{};
-    for (final order in store.orders) {
-      final key = order.phone.trim().isNotEmpty
-        ? order.phone.replaceAll(RegExp(r'\s+'), '')
-        : _normalizeArabic(order.customer);
-      groups.putIfAbsent(key, () => []).add(order);
-    }
-    return groups.entries.map((entry) {
-      final first = entry.value.first;
-      return _CustomerRecord(entry.key, first.customer, first.phone, first.address, entry.value);
-    }).toList()..sort((a, b) => a.name.compareTo(b.name));
-  }
+  List<core.Customer> _records({required bool archived}) => store.customers
+    .where((c) => c.archived == archived)
+    .toList()..sort((a, b) => a.name.compareTo(b.name));
+
+  List<core.Order> _orders(core.Customer customer) =>
+    store.orders.where((o) => o.customerId == customer.id).toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
   @override Widget build(BuildContext context) {
-    final records = _records();
-    final balance = records.fold<double>(0, (v, c) => v + c.balance);
+    final active = _records(archived: false);
+    final archived = _records(archived: true);
+    final balance = active.fold<double>(0, (v, c) =>
+      v + _orders(c).fold<double>(0, (x, o) => x + (o.outstanding > 0 ? o.outstanding : 0)));
     return ListView(padding: const EdgeInsets.fromLTRB(16, 22, 16, 90), children: [
       Row(children: [
         const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('دليل الزبائن', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
           SizedBox(height: 4),
-          Text('ملف واحد لكل زبون يجمع طلباته ومبالغه.', style: TextStyle(color: muted, fontSize: 11)),
+          Text('ملفات مستقلة عن الطلبات وسجلّاتها.', style: TextStyle(color: muted, fontSize: 11)),
         ])),
-        Text('${records.length} زبون', style: const TextStyle(color: gold, fontWeight: FontWeight.w800)),
+        IconButton.filledTonal(onPressed: () => _addCustomer(context),
+          icon: const Icon(Icons.person_add_alt_1_rounded), tooltip: 'إضافة زبون'),
+        const SizedBox(width: 6),
+        Text('${active.length} زبون', style: const TextStyle(color: gold, fontWeight: FontWeight.w800)),
       ]),
       const SizedBox(height: 13),
       Row(children: [
-        Expanded(child: _MiniStat(label: 'الزبائن', value: '${records.length}', icon: Icons.people_alt_outlined)),
+        Expanded(child: _MiniStat(label: 'الملفات النشطة', value: '${active.length}', icon: Icons.people_alt_outlined)),
         const SizedBox(width: 9),
         Expanded(child: _MiniStat(label: 'مبالغ مستحقة', value: core.money(balance), icon: Icons.account_balance_wallet_outlined)),
       ]),
       const SizedBox(height: 15),
-      if (records.isEmpty) const EmptyState('سيظهر الزبائن تلقائياً عند تسجيل أول طلب.'),
-      for (final c in records) Card(
-        margin: const EdgeInsets.only(bottom: 9),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(17),
-          onTap: () => _showDetails(context, c),
-          child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
-            Container(width: 42, height: 42, decoration: BoxDecoration(
-              color: gold.withValues(alpha: .12), borderRadius: BorderRadius.circular(13)),
-              child: const Icon(Icons.person_outline_rounded, color: gold)),
-            const SizedBox(width: 11),
-            Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(c.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
-              Text(c.phone.isEmpty ? 'من دون رقم هاتف' : c.phone,
-                style: const TextStyle(color: muted, fontSize: 10)),
-              Text('${c.orders.length} طلب • متبقّي ${core.money(c.balance)}',
-                style: const TextStyle(color: gold, fontSize: 10)),
-            ])),
-            const Icon(Icons.chevron_left_rounded, color: muted),
-          ])),
-        ),
-      ),
-      const SizedBox(height: 8),
-      const Text('ملاحظة: دليل الزبائن يجمع السجلات من الطلبات الحالية؛ تعديل الملف يحدّث بيانات الزبون في جميع طلباته.',
-        style: TextStyle(color: muted, fontSize: 10)),
+      if (active.isEmpty) const EmptyState('لا يوجد زبائن بعد. أضف ملفاً أو أنشئ أول طلب.'),
+      for (final customer in active) _customerCard(context, customer),
+      if (archived.isNotEmpty) ...[
+        const SizedBox(height: 18),
+        Text('الملفات المؤرشفة · ${archived.length}',
+          style: const TextStyle(color: muted, fontWeight: FontWeight.w800)),
+        const SizedBox(height: 8),
+        for (final customer in archived) _customerCard(context, customer, archived: true),
+      ],
     ]);
   }
 
-  Future<void> _showDetails(BuildContext context, _CustomerRecord customer) async {
+  Widget _customerCard(BuildContext context, core.Customer customer, {bool archived = false}) {
+    final orders = _orders(customer);
+    final balance = orders.fold<double>(0, (v, o) => v + (o.outstanding > 0 ? o.outstanding : 0));
+    return Card(
+      margin: const EdgeInsets.only(bottom: 9),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(17),
+        onTap: () => _showDetails(context, customer),
+        child: Padding(padding: const EdgeInsets.all(14), child: Row(children: [
+          Container(width: 42, height: 42, decoration: BoxDecoration(
+            color: gold.withValues(alpha: .12), borderRadius: BorderRadius.circular(13)),
+            child: Icon(archived ? Icons.archive_outlined : Icons.person_outline_rounded, color: gold)),
+          const SizedBox(width: 11),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(customer.name, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13)),
+            Text(customer.phone.isEmpty ? 'من دون رقم هاتف' : customer.phone,
+              style: const TextStyle(color: muted, fontSize: 10)),
+            Text('${orders.length} طلب • متبقّي ${core.money(balance)}',
+              style: const TextStyle(color: gold, fontSize: 10)),
+          ])),
+          const Icon(Icons.chevron_left_rounded, color: muted),
+        ])),
+      ),
+    );
+  }
+
+  Future<void> _addCustomer(BuildContext context) async {
+    final name = TextEditingController(), phone = TextEditingController(), address = TextEditingController();
+    final result = await showDialog<List<String>>(context: context, builder: (ctx) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(title: const Text('ملف زبون جديد'),
+        content: SizedBox(width: 420, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم الزبون')),
+          const SizedBox(height: 9),
+          TextField(controller: phone, keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'رقم الهاتف')),
+          const SizedBox(height: 9),
+          TextField(controller: address, decoration: const InputDecoration(labelText: 'العنوان')),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(onPressed: () {
+            if (name.text.trim().isNotEmpty) Navigator.pop(ctx,
+              [name.text.trim(), phone.text.trim(), address.text.trim()]);
+          }, child: const Text('حفظ الملف')),
+        ])));
+    if (result != null) {
+      final key = result[1].replaceAll(RegExp(r'[^0-9+]'), '');
+      final id = 'manual_${DateTime.now().microsecondsSinceEpoch}';
+      await store.addCustomer(core.Customer(id: id, name: result[0], phone: result[1], address: result[2]));
+    }
+    name.dispose(); phone.dispose(); address.dispose();
+  }
+
+  Future<void> _showDetails(BuildContext context, core.Customer customer) async {
+    final orders = _orders(customer);
     await showDialog<void>(context: context, builder: (ctx) => Directionality(
       textDirection: TextDirection.rtl,
       child: AlertDialog(
@@ -545,14 +572,16 @@ class CustomersPage extends StatelessWidget {
             if (customer.phone.isNotEmpty) Text('الهاتف: ${customer.phone}'),
             if (customer.address.isNotEmpty) Text('العنوان: ${customer.address}'),
             const SizedBox(height: 8),
-            Text('إجمالي الطلبات: ${customer.orders.length}'),
-            Text('قيمة الطلبات: ${core.money(customer.sales)}'),
-            Text('المبلغ المتبقي: ${core.money(customer.balance)}',
+            Text('إجمالي الطلبات: ${orders.length}'),
+            Text('قيمة الطلبات: ${core.money(orders.fold<double>(0, (v, o) => v + o.price))}'),
+            Text('المبلغ المتبقي: ${core.money(orders.fold<double>(0, (v, o) => v + (o.outstanding > 0 ? o.outstanding : 0)))}',
               style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
             const Divider(height: 22),
             const Text('سجل الطلبات', style: TextStyle(fontWeight: FontWeight.w900)),
             const SizedBox(height: 8),
-            for (final order in customer.orders)
+            if (orders.isEmpty) const Text('لا توجد طلبات مرتبطة بهذا الملف.',
+              style: TextStyle(color: muted)),
+            for (final order in orders)
               Padding(padding: const EdgeInsets.only(bottom: 8),
                 child: core.OrderTile(order: order, store: store)),
           ],
@@ -562,32 +591,39 @@ class CustomersPage extends StatelessWidget {
           OutlinedButton.icon(onPressed: () async {
             Navigator.pop(ctx);
             await _editCustomer(context, customer);
-          }, icon: const Icon(Icons.edit_outlined), label: const Text('تعديل بيانات الزبون')),
-          TextButton.icon(style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            onPressed: () async {
-              final ok = await showDialog<bool>(context: ctx, builder: (confirmCtx) => AlertDialog(
-                title: const Text('حذف ملف الزبون؟'),
-                content: Text('سيتم حذف ${customer.orders.length} طلب مرتبط بهذا الزبون أيضاً، مع إعادة المواد المصروفة للمخزون عند الحاجة. لا يمكن التراجع عن هذا الحذف.'),
-                actions: [
-                  TextButton(onPressed: () => Navigator.pop(confirmCtx, false), child: const Text('إلغاء')),
-                  FilledButton(onPressed: () => Navigator.pop(confirmCtx, true),
-                    style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
-                    child: const Text('حذف الزبون وطلباته')),
-                ],
-              ));
-              if (ok == true) {
-                for (final order in customer.orders.toList()) {
-                  await store.deleteOrder(order);
-                }
-                if (ctx.mounted) Navigator.pop(ctx);
-              }
-            }, icon: const Icon(Icons.delete_outline), label: const Text('حذف الزبون')),
+          }, icon: const Icon(Icons.edit_outlined), label: const Text('تعديل الملف')),
+          TextButton.icon(onPressed: () async {
+            final linked = orders.isNotEmpty;
+            final action = linked ? 'أرشفة الملف' : 'حذف الملف';
+            final ok = await showDialog<bool>(context: ctx, builder: (confirmCtx) => AlertDialog(
+              title: Text('$action؟'),
+              content: Text(linked
+                ? 'سيُخفى الملف من القائمة النشطة، وستبقى جميع الطلبات وسجلّاتها المالية محفوظة.'
+                : 'هذا الملف لا يرتبط بأي طلب. سيتم حذفه نهائياً من دليل الزبائن.'),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(confirmCtx, false), child: const Text('إلغاء')),
+                FilledButton(onPressed: () => Navigator.pop(confirmCtx, true),
+                  style: FilledButton.styleFrom(backgroundColor: Colors.redAccent),
+                  child: Text(action)),
+              ],
+            ));
+            if (ok == true) {
+              if (linked) await store.archiveCustomer(customer);
+              else await store.deleteCustomer(customer);
+              if (ctx.mounted) Navigator.pop(ctx);
+            }
+          }, icon: Icon(customer.archived ? Icons.unarchive_outlined : Icons.archive_outlined),
+            label: Text(customer.archived ? 'حذف الملف' : 'أرشفة الملف')),
+          if (customer.archived) TextButton(onPressed: () async {
+            customer.archived = false; await store.updateCustomer(customer);
+            if (ctx.mounted) Navigator.pop(ctx);
+          }, child: const Text('إعادة تفعيل')),
         ],
       ),
     ));
   }
 
-  Future<void> _editCustomer(BuildContext context, _CustomerRecord customer) async {
+  Future<void> _editCustomer(BuildContext context, core.Customer customer) async {
     final name = TextEditingController(text: customer.name);
     final phone = TextEditingController(text: customer.phone);
     final address = TextEditingController(text: customer.address);
@@ -605,18 +641,15 @@ class CustomersPage extends StatelessWidget {
         actions: [
           TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
           FilledButton(onPressed: () {
-            if (name.text.trim().isNotEmpty) Navigator.pop(ctx, [name.text.trim(), phone.text.trim(), address.text.trim()]);
+            if (name.text.trim().isNotEmpty) Navigator.pop(ctx,
+              [name.text.trim(), phone.text.trim(), address.text.trim()]);
           }, child: const Text('حفظ')),
         ],
       ),
     ));
     if (result != null) {
-      for (final order in customer.orders) {
-        order.customer = result[0];
-        order.phone = result[1];
-        order.address = result[2];
-        await store.updateOrder(order);
-      }
+      customer.name = result[0]; customer.phone = result[1]; customer.address = result[2];
+      await store.updateCustomer(customer);
     }
     name.dispose(); phone.dispose(); address.dispose();
   }
