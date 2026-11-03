@@ -636,7 +636,12 @@ class OrderTile extends StatelessWidget {
               FilledButton.tonalIcon(icon: const Icon(Icons.inventory_outlined),
                 label: const Text('تأكيد الجاهزية وخصم المواد'),
                 onPressed: () async {
-                  final message = await store.confirmMaterialUsage(order);
+                  if (order.price <= 0) {
+                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                       content: Text('سجّل سعر البيع من تعديل الطلب قبل تأكيد الجاهزية.')));
+                     return;
+                   }
+                   final message = await store.confirmMaterialUsage(order);
                   if (!context.mounted) return;
                   if (message != null) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
@@ -666,7 +671,12 @@ class OrderTile extends StatelessWidget {
                       content: Text('افتح تعديل الطلب وسجّل الخشب والمواد والتغليف قبل تأكيد الجاهزية.')));
                     return;
                   }
-                  final message = await store.confirmMaterialUsage(order);
+                  if (order.price <= 0) {
+                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                       content: Text('سجّل سعر البيع من تعديل الطلب قبل تأكيد الجاهزية.')));
+                     return;
+                   }
+                   final message = await store.confirmMaterialUsage(order);
                   if (message != null) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
                     return;
