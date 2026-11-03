@@ -105,6 +105,8 @@ class _PremiumWorkspaceState extends State<PremiumWorkspace> {
                 (3, 'المخزون', Icons.inventory_2_rounded),
                 (4, 'الحسابات', Icons.account_balance_wallet_rounded),
                 (5, 'التقارير', Icons.query_stats_rounded),
+                (6, 'كتالوج المنتجات', Icons.category_rounded),
+                (7, 'المصاريف', Icons.receipt_long_rounded),
               ]) ListTile(leading: Icon(item.$3, color: gold), title: Text(item.$2),
                 trailing: const Icon(Icons.chevron_left_rounded),
                 onTap: () { Navigator.pop(ctx); setState(() { selected = item.$1; query = ''; }); }),
@@ -128,6 +130,8 @@ class _PremiumWorkspaceState extends State<PremiumWorkspace> {
           3 => core.InventoryPage(store: s),
           4 => PremiumAccountsPage(store: s),
           5 => ReportsPage(store: s),
+          6 => ProductCatalogPage(store: s),
+          7 => ExpensesPage(store: s),
           _ => Dashboard(store: s, newOrder: () => core.showOrderForm(context, s), onNavigate: go),
         };
     return Directionality(
@@ -169,10 +173,11 @@ class Sidebar extends StatelessWidget {
   final String syncStatus;
 
   @override Widget build(BuildContext context) {
-    const labels = ['نظرة عامة', 'الطلبات', 'الزبائن', 'المخزون', 'الحسابات', 'التقارير'];
+    const labels = ['نظرة عامة', 'الطلبات', 'الزبائن', 'المخزون', 'الحسابات', 'التقارير', 'كتالوج المنتجات', 'المصاريف'];
     const icons = [Icons.grid_view_rounded, Icons.receipt_long_rounded,
       Icons.people_alt_rounded, Icons.inventory_2_rounded,
-      Icons.account_balance_wallet_rounded, Icons.query_stats_rounded];
+      Icons.account_balance_wallet_rounded, Icons.query_stats_rounded,
+      Icons.category_rounded, Icons.receipt_long_rounded];
     return Container(
       width: 252, padding: const EdgeInsets.fromLTRB(17, 24, 17, 17),
       decoration: const BoxDecoration(color: surface, border: Border(left: BorderSide(color: line))),
@@ -667,6 +672,222 @@ class _MiniStat extends StatelessWidget {
         Text(label, style: const TextStyle(color: muted, fontSize: 10)),
       ])),
     ])));
+}
+
+class ProductCatalogPage extends StatelessWidget {
+  const ProductCatalogPage({super.key, required this.store});
+  final core.StudioStore store;
+
+  @override Widget build(BuildContext context) {
+    final items = [...store.products]..sort((a, b) => a.name.compareTo(b.name));
+    final active = items.where((p) => p.active).length;
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 22, 16, 90), children: [
+      Row(children: [
+        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('كتالوج المنتجات', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+          SizedBox(height: 4), Text('منتجاتك ومقاساتها وأسعار البيع المعتمدة.',
+            style: TextStyle(color: muted, fontSize: 11)),
+        ])),
+        FilledButton.icon(onPressed: () => _edit(context), icon: const Icon(Icons.add),
+          label: const Text('منتج جديد')),
+      ]),
+      const SizedBox(height: 13),
+      Row(children: [
+        Expanded(child: _MiniStat(label: 'كل المنتجات', value: '${items.length}', icon: Icons.category_outlined)),
+        const SizedBox(width: 9),
+        Expanded(child: _MiniStat(label: 'منتجات نشطة', value: '$active', icon: Icons.check_circle_outline)),
+      ]),
+      const SizedBox(height: 14),
+      if (items.isEmpty) const EmptyState('الكتالوج فارغ. أضف أول منتج مع المقاس وسعر البيع.'),
+      for (final p in items) Card(margin: const EdgeInsets.only(bottom: 9),
+        child: Padding(padding: const EdgeInsets.all(13), child: Row(children: [
+          Container(width: 40, height: 40, decoration: BoxDecoration(
+            color: gold.withValues(alpha: .12), borderRadius: BorderRadius.circular(12)),
+            child: const Icon(Icons.inventory_2_outlined, color: gold)),
+          const SizedBox(width: 10),
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(p.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+            Text('${p.category} • ${p.size.isEmpty ? 'من دون مقاس محدد' : p.size}',
+              style: const TextStyle(color: muted, fontSize: 10)),
+            if (p.description.isNotEmpty) Text(p.description,
+              style: const TextStyle(color: muted, fontSize: 10), maxLines: 2, overflow: TextOverflow.ellipsis),
+          ])),
+          Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text(core.money(p.salePrice), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+            Text(p.active ? 'نشط' : 'موقوف', style: const TextStyle(color: muted, fontSize: 10)),
+            PopupMenuButton<String>(onSelected: (v) async {
+              if (v == 'edit') await _edit(context, existing: p);
+              if (v == 'toggle') { p.active = !p.active; await store.updateProduct(p); }
+              if (v == 'delete') await _delete(context, p);
+            }, itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('تعديل')),
+              PopupMenuItem(value: 'toggle', child: Text('تفعيل / إيقاف')),
+              PopupMenuItem(value: 'delete', child: Text('حذف')),
+            ]),
+          ]),
+        ]))),
+    ]);
+  }
+
+  Future<void> _edit(BuildContext context, {core.StudioProduct? existing}) async {
+    final name = TextEditingController(text: existing?.name ?? '');
+    final category = TextEditingController(text: existing?.category ?? 'مجسمات');
+    final size = TextEditingController(text: existing?.size ?? '');
+    final price = TextEditingController(text: existing?.salePrice.toString() ?? '');
+    final description = TextEditingController(text: existing?.description ?? '');
+    final result = await showDialog<bool>(context: context, builder: (ctx) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(title: Text(existing == null ? 'إضافة منتج' : 'تعديل المنتج'),
+        content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم المنتج')),
+          const SizedBox(height: 8), TextField(controller: category, decoration: const InputDecoration(labelText: 'التصنيف')),
+          const SizedBox(height: 8), TextField(controller: size, decoration: const InputDecoration(labelText: 'المقاس / الحجم')),
+          const SizedBox(height: 8), TextField(controller: price, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'سعر البيع')),
+          const SizedBox(height: 8), TextField(controller: description, maxLines: 2,
+            decoration: const InputDecoration(labelText: 'وصف أو ملاحظات')),
+        ]))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () {
+            final p = double.tryParse(price.text.trim().replaceAll(',', '.'));
+            if (name.text.trim().isNotEmpty && p != null && p >= 0) Navigator.pop(ctx, true);
+          }, child: const Text('حفظ المنتج')),
+        ],
+      )));
+    if (result == true) {
+      if (existing == null) {
+        await store.addProduct(core.StudioProduct(id: DateTime.now().microsecondsSinceEpoch.toString(),
+          name: name.text.trim(), category: category.text.trim(), size: size.text.trim(),
+          salePrice: double.parse(price.text.trim().replaceAll(',', '.')), description: description.text.trim()));
+      } else {
+        existing.name = name.text.trim(); existing.category = category.text.trim();
+        existing.size = size.text.trim(); existing.salePrice = double.parse(price.text.trim().replaceAll(',', '.'));
+        existing.description = description.text.trim(); await store.updateProduct(existing);
+      }
+    }
+    name.dispose(); category.dispose(); size.dispose(); price.dispose(); description.dispose();
+  }
+
+  Future<void> _delete(BuildContext context, core.StudioProduct p) async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('حذف المنتج؟'),
+      content: const Text('سيُحذف من الكتالوج فقط. الطلبات السابقة تحتفظ باسم المنتج وسعرها المسجل.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+    if (ok == true) await store.deleteProduct(p);
+  }
+}
+
+class ExpensesPage extends StatelessWidget {
+  const ExpensesPage({super.key, required this.store});
+  final core.StudioStore store;
+
+  @override Widget build(BuildContext context) {
+    final items = [...store.expenses]..sort((a, b) => b.expenseDate.compareTo(a.expenseDate));
+    final now = DateTime.now();
+    final monthItems = items.where((e) => e.expenseDate.year == now.year && e.expenseDate.month == now.month);
+    final monthTotal = monthItems.fold<double>(0, (v, e) => v + e.amount);
+    final allTotal = items.fold<double>(0, (v, e) => v + e.amount);
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 22, 16, 90), children: [
+      Row(children: [
+        const Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('سجل المصاريف', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+          SizedBox(height: 4), Text('سجّل مصاريف التشغيل والمشتريات خارج الطلبات.',
+            style: TextStyle(color: muted, fontSize: 11)),
+        ])),
+        FilledButton.icon(onPressed: () => _edit(context), icon: const Icon(Icons.add),
+          label: const Text('مصروف جديد')),
+      ]),
+      const SizedBox(height: 13),
+      Row(children: [
+        Expanded(child: _MiniStat(label: 'مصاريف هذا الشهر', value: core.money(monthTotal), icon: Icons.calendar_month_outlined)),
+        const SizedBox(width: 9),
+        Expanded(child: _MiniStat(label: 'إجمالي المصاريف', value: core.money(allTotal), icon: Icons.receipt_long_outlined)),
+      ]),
+      const SizedBox(height: 14),
+      if (items.isEmpty) const EmptyState('لا توجد مصاريف مسجلة بعد.'),
+      for (final e in items) Card(margin: const EdgeInsets.only(bottom: 8),
+        child: ListTile(
+          leading: const CircleAvatar(backgroundColor: raised, child: Icon(Icons.payments_outlined, color: gold)),
+          title: Text(e.title, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text('${e.category} • ${e.expenseDate.toLocal().toString().substring(0, 10)} • ${e.paymentMethod}',
+            style: const TextStyle(color: muted, fontSize: 10)),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            Text(core.money(e.amount), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+            PopupMenuButton<String>(onSelected: (v) async {
+              if (v == 'edit') await _edit(context, existing: e);
+              if (v == 'delete') await _delete(context, e);
+            }, itemBuilder: (_) => const [
+              PopupMenuItem(value: 'edit', child: Text('تعديل')),
+              PopupMenuItem(value: 'delete', child: Text('حذف')),
+            ]),
+          ]),
+          onTap: () => _details(context, e),
+        )),
+    ]);
+  }
+
+  Future<void> _edit(BuildContext context, {core.BusinessExpense? existing}) async {
+    final title = TextEditingController(text: existing?.title ?? '');
+    final category = TextEditingController(text: existing?.category ?? 'تشغيل');
+    final amount = TextEditingController(text: existing?.amount.toString() ?? '');
+    final notes = TextEditingController(text: existing?.notes ?? '');
+    var method = existing?.paymentMethod ?? 'نقداً / باليد';
+    final result = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, refresh) => Directionality(textDirection: TextDirection.rtl,
+        child: AlertDialog(title: Text(existing == null ? 'تسجيل مصروف' : 'تعديل المصروف'),
+          content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            TextField(controller: title, decoration: const InputDecoration(labelText: 'بيان المصروف')),
+            const SizedBox(height: 8), TextField(controller: category, decoration: const InputDecoration(labelText: 'التصنيف')),
+            const SizedBox(height: 8), TextField(controller: amount, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              decoration: const InputDecoration(labelText: 'المبلغ')),
+            const SizedBox(height: 8), DropdownButtonFormField<String>(value: method,
+              decoration: const InputDecoration(labelText: 'طريقة الدفع'),
+              items: ['نقداً / باليد', 'Whish Money', 'تحويل بنكي', 'مع شخص']
+                .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+              onChanged: (v) { if (v != null) refresh(() => method = v); }),
+            const SizedBox(height: 8), TextField(controller: notes, maxLines: 2,
+              decoration: const InputDecoration(labelText: 'ملاحظة')),
+          ]))),
+          actions: [
+            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+            FilledButton(onPressed: () {
+              final n = double.tryParse(amount.text.trim().replaceAll(',', '.'));
+              if (title.text.trim().isNotEmpty && n != null && n > 0) Navigator.pop(ctx, true);
+            }, child: const Text('حفظ المصروف')),
+          ],
+        )));
+    if (result == true) {
+      if (existing == null) {
+        await store.addExpense(core.BusinessExpense(id: DateTime.now().microsecondsSinceEpoch.toString(),
+          title: title.text.trim(), category: category.text.trim(),
+          amount: double.parse(amount.text.trim().replaceAll(',', '.')),
+          paymentMethod: method, notes: notes.text.trim()));
+      } else {
+        existing.title = title.text.trim(); existing.category = category.text.trim();
+        existing.amount = double.parse(amount.text.trim().replaceAll(',', '.'));
+        existing.paymentMethod = method; existing.notes = notes.text.trim();
+        await store.updateExpense(existing);
+      }
+    }
+    title.dispose(); category.dispose(); amount.dispose(); notes.dispose();
+  }
+
+  Future<void> _details(BuildContext context, core.BusinessExpense e) async {
+    await showDialog<void>(context: context, builder: (ctx) => AlertDialog(
+      title: Text(e.title), content: Text('التصنيف: ${e.category}\nالمبلغ: ${core.money(e.amount)}\nطريقة الدفع: ${e.paymentMethod}\nالتاريخ: ${e.expenseDate.toLocal()}\nملاحظات: ${e.notes}'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))]));
+  }
+
+  Future<void> _delete(BuildContext context, core.BusinessExpense e) async {
+    final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+      title: const Text('حذف المصروف؟'),
+      content: const Text('سيُزال من سجل المصاريف والتقارير.'),
+      actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+        FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+    if (ok == true) await store.deleteExpense(e);
+  }
 }
 
 class PremiumAccountsPage extends StatelessWidget {
