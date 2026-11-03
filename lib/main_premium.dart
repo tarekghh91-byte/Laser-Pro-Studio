@@ -449,12 +449,13 @@ String _normalizeArabic(String value) => value.toLowerCase()
 
 String _cleanCommand(String value) {
   var q = _normalizeArabic(value);
-  for (final word in ['ورجيني', 'جيبلي', 'ابحث عن', 'دور على', 'وين', 'اعرض',
-    'بدي اعرف', 'خبرني', 'قللي', 'شو', 'قديش', 'كم', 'الطلبات', 'طلبات',
-    'الطلب', 'طلب', 'الزبون', 'العميل', 'اسم']) {
-    q = q.replaceAll(word, ' ');
+  for (final phrase in ['ابحث عن', 'دور على', 'بدي اعرف', 'ورجيني', 'جيبلي',
+    'اعطيني', 'خبرني', 'قللي', 'اعرضلي', 'اعرض']) {
+    q = q.replaceAll(phrase, ' ');
   }
-  return q.replaceAll(RegExp(r'\\s+'), ' ').trim();
+  const stopWords = {'شو', 'قديش', 'كم', 'وين', 'الطلبات', 'طلبات', 'الطلب',
+    'طلب', 'الزبون', 'العميل', 'اسم', 'تفاصيل', 'تفصيل', 'عندي'};
+  return q.split(RegExp(r'\\s+')).where((word) => word.isNotEmpty && !stopWords.contains(word)).join(' ').trim();
 }
 
 
@@ -748,6 +749,79 @@ class ReportsPage extends StatelessWidget {
   }
 }
 
+
+class _FinanceLine extends StatelessWidget {
+  const _FinanceLine(this.label, this.value, {this.strong = false});
+  final String label, value;
+  final bool strong;
+  @override Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 4),
+    child: Row(children: [
+      Expanded(child: Text(label, style: TextStyle(fontWeight: strong ? FontWeight.w900 : FontWeight.w500))),
+      Text(value, style: TextStyle(color: strong ? gold : null, fontWeight: FontWeight.w900)),
+    ]));
+}
+
+Future<void> showMaterialDetails(BuildContext context, core.StudioStore store,
+    core.Material material, VoidCallback openInventory) async {
+  final name = TextEditingController(text: material.name);
+  final quantity = TextEditingController(text: material.quantity.toString());
+  final limit = TextEditingController(text: material.reorderLevel.toString());
+  final cost = TextEditingController(text: (material.unitCost * material.packUnits).toStringAsFixed(3));
+  await showDialog<void>(context: context, builder: (ctx) => Directionality(
+    textDirection: TextDirection.rtl,
+    child: AlertDialog(
+      title: Text(material.name, style: const TextStyle(fontWeight: FontWeight.w900)),
+      content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(
+        mainAxisSize: MainAxisSize.min, children: [
+          Text('التصنيف: ${material.category} • وحدة الاستخدام: ${material.unit}',
+            style: const TextStyle(color: muted, fontSize: 11)),
+          const SizedBox(height: 10),
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم المادة')),
+          const SizedBox(height: 8),
+          TextField(controller: quantity, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: 'الكمية الحالية (${material.unit})')),
+          const SizedBox(height: 8),
+          TextField(controller: limit, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: InputDecoration(labelText: 'حد تنبيه النقص (${material.unit})')),
+          const SizedBox(height: 8),
+          TextField(controller: cost, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'سعر العبوة / اللوح / الرول')),
+        ]))),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق')),
+        TextButton(onPressed: () async {
+          final ok = await showDialog<bool>(context: ctx, builder: (confirm) => AlertDialog(
+            title: const Text('حذف المادة؟'),
+            content: const Text('تبقى تفاصيل استخدامها السابقة محفوظة داخل الطلبات.'),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(confirm, false), child: const Text('إلغاء')),
+              FilledButton(onPressed: () => Navigator.pop(confirm, true),
+                style: FilledButton.styleFrom(backgroundColor: Colors.redAccent), child: const Text('حذف')),
+            ],
+          ));
+          if (ok == true) {
+            await store.deleteMaterial(material);
+            if (ctx.mounted) Navigator.pop(ctx);
+          }
+        }, child: const Text('حذف', style: TextStyle(color: Colors.redAccent))),
+        FilledButton(onPressed: () async {
+          final q = double.tryParse(quantity.text), r = double.tryParse(limit.text), c = double.tryParse(cost.text);
+          if (name.text.trim().isEmpty || q == null || r == null || c == null ||
+              !q.isFinite || !r.isFinite || !c.isFinite || q < 0 || r < 0 || c < 0) return;
+          material.name = name.text.trim();
+          material.quantity = q;
+          material.reorderLevel = r;
+          material.unitCost = c / material.packUnits;
+          await store.updateMaterial(material);
+          if (ctx.mounted) Navigator.pop(ctx);
+        }, child: const Text('حفظ التعديلات')),
+      ],
+    ),
+  ));
+  name.dispose(); quantity.dispose(); limit.dispose(); cost.dispose();
+}
+
 class SearchPage extends StatelessWidget {
   const SearchPage({super.key, required this.store, required this.query,
     required this.onOrders, required this.onInventory});
@@ -765,7 +839,12 @@ class SearchPage extends StatelessWidget {
     final commandDue = q.contains('لازم سلم') || q.contains('تسليم اليوم') || q.contains('موعد') || q == 'اليوم';
     final commandStock = q.contains('مخزون') || q.contains('مواد') || q.contains('ناقص') || q.contains('اشتري');
     final commandLowStock = q.contains('ناقص') || q.contains('اشتري') || q.contains('خلص');
-    final commandDebt = q.contains('باقي') || q.contains('مستحق') || q.contains('دين') || q.contains('قبض');
+    final commandDebt = q.contains('باقي') || q.contains('مستحق') || q.contains('دين') ||
+      q.contains('مصاري') || q.contains('عليه');
+    final commandFinance = q.contains('ربح') || q.contains('مبيعات') ||
+      q.contains('قبض') || q.contains('دخل');
+    final financeToday = q.contains('اليوم');
+    final financeMonth = q.contains('الشهر') || q.contains('شهري');
     final orders = store.orders.where((o) {
       if (commandReady) return o.status == 'جاهز';
       if (commandActive) return o.status == 'قيد التنفيذ' || o.status == 'جديد';
@@ -773,6 +852,12 @@ class SearchPage extends StatelessWidget {
       if (commandLate) return o.status != 'تم التسليم' && o.dueDate.isBefore(todayOnly);
       if (commandDue) return o.status != 'تم التسليم' && !o.dueDate.isAfter(todayOnly.add(const Duration(days: 1)));
       if (commandDebt) return o.outstanding > 0;
+      if (commandFinance) {
+        if (o.status != 'تم التسليم') return false;
+        if (financeToday) return o.createdAt.year == today.year && o.createdAt.month == today.month && o.createdAt.day == today.day;
+        if (financeMonth) return o.createdAt.year == today.year && o.createdAt.month == today.month;
+        return true;
+      }
       return _normalizeArabic(o.customer).contains(q) || _normalizeArabic(o.product).contains(q) || o.id.toLowerCase().contains(q);
     }).toList()..sort((a,b) => a.dueDate.compareTo(b.dueDate));
     final materials = store.materials.where((m) => commandStock
@@ -781,6 +866,7 @@ class SearchPage extends StatelessWidget {
     final commandLabel = commandReady ? 'الطلبات الجاهزة' : commandActive ? 'الطلبات قيد التنفيذ'
       : commandDelivered ? 'الطلبات المسلّمة' : commandLate ? 'الطلبات المتأخرة'
       : commandDue ? 'التسليمات القريبة' : commandDebt ? 'الطلبات ذات المبالغ المتبقية'
+      : commandFinance ? (q.contains('ربح') ? 'ملخص الأرباح' : q.contains('مبيعات') ? 'ملخص المبيعات' : 'ملخص المقبوضات')
       : commandStock ? (commandLowStock ? 'مواد تحتاج إعادة طلب' : 'المخزون والمواد') : 'نتائج البحث';
     return ListView(padding: const EdgeInsets.all(20), children: [
       Text(commandLabel, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w900)),
@@ -789,6 +875,23 @@ class SearchPage extends StatelessWidget {
       const SizedBox(height: 20),
       if (commandDebt) Text('المبالغ المتبقية الإجمالية: ${core.money(orders.fold<double>(0, (v, o) => v + o.outstanding))}',
         style: const TextStyle(color: gold, fontWeight: FontWeight.w800)),
+      if (commandFinance) ...[
+        Builder(builder: (context) {
+          final sales = orders.fold<double>(0, (v, o) => v + o.price);
+          final received = orders.fold<double>(0, (v, o) => v + o.paid);
+          final cost = orders.fold<double>(0, (v, o) => v + o.totalCost);
+          return Card(child: Padding(padding: const EdgeInsets.all(14), child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              _FinanceLine('المبيعات', core.money(sales)),
+              _FinanceLine('المقبوض', core.money(received)),
+              _FinanceLine('التكاليف المباشرة', core.money(cost)),
+              const Divider(),
+              _FinanceLine('الربح المباشر', core.money(sales-cost), strong: true),
+              const Text('المبالغ مبنية على الطلبات المسلّمة والمسجلة في الفترة المختارة.',
+                style: TextStyle(color: muted, fontSize: 9)),
+            ])));
+        }),
+      ],
       Text('الطلبات (${orders.length})', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w900)),
       const SizedBox(height: 9),
       if (orders.isEmpty) const EmptyState('لا توجد طلبات مطابقة.'),
@@ -801,7 +904,7 @@ class SearchPage extends StatelessWidget {
       for (final m in materials) Card(child: ListTile(
         leading: const Icon(Icons.inventory_2_outlined, color: gold), title: Text(m.name),
         subtitle: Text('${m.category} • ${m.quantity.toStringAsFixed(2)} ${m.unit}'),
-        onTap: onInventory)),
+        onTap: () => showMaterialDetails(context, store, m, onInventory))),
       TextButton.icon(onPressed: onOrders, icon: const Icon(Icons.receipt_long_rounded),
         label: const Text('فتح كل الطلبات')),
     ]);
