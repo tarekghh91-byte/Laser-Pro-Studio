@@ -966,7 +966,7 @@ class SuppliersPurchasesPage extends StatelessWidget {
           title: Text(p.materialName, style: const TextStyle(fontWeight: FontWeight.w800)),
           subtitle: Text('${p.supplierName} • ${p.packageCount.toStringAsFixed(2)} عبوة • ${p.baseQuantity.toStringAsFixed(2)} وحدة\n'
             '${p.invoiceNumber.isEmpty ? 'من دون رقم فاتورة' : 'فاتورة ${p.invoiceNumber}'} • '
-            '${p.purchaseDate.toLocal().toString().substring(0, 10)} • ${p.paymentMethod}',
+            '${p.purchaseDate.toLocal().toString().substring(0, 10)} • ${p.paidAmount <= 0 ? 'على الحساب / غير مدفوع' : 'آخر دفعة: ${p.paymentMethod}'}',
             style: const TextStyle(color: muted, fontSize: 10)),
           isThreeLine: true,
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
@@ -1133,7 +1133,7 @@ class SuppliersPurchasesPage extends StatelessWidget {
         materialId: material.id, materialName: material.name,
         packageCount: packs, packUnits: material.packUnits,
         baseQuantity: units, packageCost: cost, unitCost: unitCost,
-        totalAmount: total, paymentMethod: method, paidAmount: paid, payments: initialPayments,
+        totalAmount: total, paymentMethod: paid > 0 ? method : 'على الحساب', paidAmount: paid, payments: initialPayments,
         invoiceNumber: invoice.text.trim(), purchaseDate: receivedAt, notes: notes.text.trim());
       try {
         await store.recordPurchase(purchase);
