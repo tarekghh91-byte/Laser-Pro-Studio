@@ -961,7 +961,7 @@ class OrderTile extends StatelessWidget {
                 if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(content: Text('تعذّر تسجيل الدفعة: $e')));
               }
-            }, icon: const Icon(Icons.add_card_rounded), child: const Text('تسجيل دفعة جديدة')),
+            }, icon: const Icon(Icons.add_card_rounded), label: const Text('تسجيل دفعة جديدة')),
           ]))), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق'))])))));
 }
 
