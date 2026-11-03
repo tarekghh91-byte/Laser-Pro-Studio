@@ -1092,8 +1092,8 @@ class SuppliersPurchasesPage extends StatelessWidget {
               TextField(controller: invoice, decoration: const InputDecoration(labelText: 'رقم الفاتورة (اختياري)')),
               const SizedBox(height: 8),
               DropdownButtonFormField<String>(value: method,
-                decoration: const InputDecoration(labelText: 'طريقة الدفع'),
-                items: ['نقداً / باليد', 'Whish Money', 'تحويل بنكي', 'على الحساب', 'مع شخص']
+                decoration: const InputDecoration(labelText: 'طريقة الدفع للدفعة الأولى إن وُجدت'),
+                items: ['نقداً / باليد', 'Whish Money', 'تحويل بنكي', 'مع شخص']
                   .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
                 onChanged: (v) { if (v != null) refresh(() => method = v); }),
               const SizedBox(height: 8),
@@ -1124,10 +1124,11 @@ class SuppliersPurchasesPage extends StatelessWidget {
       final units = packs * material.packUnits;
       final unitCost = cost / material.packUnits;
       final total = packs * cost;
+      final purchaseId = DateTime.now().microsecondsSinceEpoch.toString();
       final initialPayments = paid > 0 ? [core.SupplierPaymentEntry(
-        id: DateTime.now().microsecondsSinceEpoch.toString(), amount: paid,
+        id: '${purchaseId}_initial', amount: paid,
         method: method, paidAt: receivedAt, notes: 'دفعة عند استلام الفاتورة')] : <core.SupplierPaymentEntry>[];
-      final purchase = core.StockPurchase(id: DateTime.now().microsecondsSinceEpoch.toString(),
+      final purchase = core.StockPurchase(id: purchaseId,
         supplierId: supplier.id, supplierName: supplier.name,
         materialId: material.id, materialName: material.name,
         packageCount: packs, packUnits: material.packUnits,
