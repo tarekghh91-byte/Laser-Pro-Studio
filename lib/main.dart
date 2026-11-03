@@ -562,6 +562,7 @@ class StudioStore extends ChangeNotifier {
     }
     final oldPaid = purchase.paidAmount;
     final oldMethod = purchase.paymentMethod;
+    final wasPending = _pendingPurchases.contains(purchase.id);
     purchase.payments.add(payment);
     purchase.paidAmount += payment.amount;
     purchase.paymentMethod = payment.method;
@@ -572,6 +573,7 @@ class StudioStore extends ChangeNotifier {
       purchase.payments.removeWhere((x) => x.id == payment.id);
       purchase.paidAmount = oldPaid;
       purchase.paymentMethod = oldMethod;
+      if (!wasPending) _pendingPurchases.remove(purchase.id);
       rethrow;
     }
   }
