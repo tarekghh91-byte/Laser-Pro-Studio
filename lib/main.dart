@@ -1194,6 +1194,15 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
   DateTime due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 3));
   DateTime orderDate = existing?.orderDate ?? DateTime.now();
   String? selectedCatalogId;
+  if (existing != null) {
+    for (final item in store.products) {
+      if (item.active && item.name == existing.product) {
+        selectedCatalogId = item.id;
+        if (existing.price <= 0) price.text = item.salePrice.toStringAsFixed(2);
+        break;
+      }
+    }
+  }
   final key = GlobalKey<FormState>();
   await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
     builder: (ctx, setForm) {
