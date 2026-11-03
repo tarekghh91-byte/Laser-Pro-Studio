@@ -554,7 +554,6 @@ class CustomersPage extends StatelessWidget {
           }, child: const Text('حفظ الملف')),
         ])));
     if (result != null) {
-      final key = result[1].replaceAll(RegExp(r'[^0-9+]'), '');
       final id = 'manual_${DateTime.now().microsecondsSinceEpoch}';
       await store.addCustomer(core.Customer(id: id, name: result[0], phone: result[1], address: result[2]));
     }
@@ -592,7 +591,7 @@ class CustomersPage extends StatelessWidget {
             Navigator.pop(ctx);
             await _editCustomer(context, customer);
           }, icon: const Icon(Icons.edit_outlined), label: const Text('تعديل الملف')),
-          TextButton.icon(onPressed: () async {
+          if (!customer.archived) TextButton.icon(onPressed: () async {
             final linked = orders.isNotEmpty;
             final action = linked ? 'أرشفة الملف' : 'حذف الملف';
             final ok = await showDialog<bool>(context: ctx, builder: (confirmCtx) => AlertDialog(
@@ -612,8 +611,8 @@ class CustomersPage extends StatelessWidget {
               else await store.deleteCustomer(customer);
               if (ctx.mounted) Navigator.pop(ctx);
             }
-          }, icon: Icon(customer.archived ? Icons.unarchive_outlined : Icons.archive_outlined),
-            label: Text(customer.archived ? 'حذف الملف' : 'أرشفة الملف')),
+          }, icon: Icon(orders.isNotEmpty ? Icons.archive_outlined : Icons.delete_outline),
+            label: Text(orders.isNotEmpty ? 'أرشفة الملف' : 'حذف الملف')),
           if (customer.archived) TextButton(onPressed: () async {
             customer.archived = false; await store.updateCustomer(customer);
             if (ctx.mounted) Navigator.pop(ctx);
