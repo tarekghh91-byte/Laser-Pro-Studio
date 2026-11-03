@@ -1203,6 +1203,7 @@ class PremiumAccountsPage extends StatelessWidget {
     final operatingExpenses = store.expenses.fold<double>(0, (v, e) => v + e.amount);
     final netOperating = sales - costs - operatingExpenses;
     final stockPurchases = store.purchases.fold<double>(0, (v, p) => v + p.totalAmount);
+    final supplierPayables = store.purchases.fold<double>(0, (v, p) => v + p.outstanding);
     final outstanding = completed.fold<double>(0, (v, o) => v + (o.outstanding > 0 ? o.outstanding : 0));
     void showOrders(String title, List<core.Order> items) {
       showDialog<void>(context: context, builder: (ctx) => Directionality(
@@ -1274,6 +1275,13 @@ class PremiumAccountsPage extends StatelessWidget {
         const Expanded(child: Text('مشتريات المخزون (معلوماتية — غير مخصومة مرة ثانية)',
           style: TextStyle(fontWeight: FontWeight.w800))),
         Text(core.money(stockPurchases), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+      ]))),
+      Card(child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [
+        const Icon(Icons.account_balance_outlined, color: gold),
+        const SizedBox(width: 10),
+        const Expanded(child: Text('مستحقات المورّدين (التزام غير مسدّد)',
+          style: TextStyle(fontWeight: FontWeight.w800))),
+        Text(core.money(supplierPayables), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
       ]))),
       const SizedBox(height: 8),
       Text('الربح المباشر يطرح المواد المستهلكة والتغليف والكهرباء. صافي النتيجة يطرح أيضاً المصاريف التشغيلية. قيمة شراء المخزون ظاهرة منفصلة ولا تُطرح هنا؛ كلفته تدخل عند استهلاك المادة في الطلب. لا يشمل بعد أجرة وقت العمل أو الالتزامات غير المسجلة. عدد الطلبات المحتسبة: ${completed.length}.',
