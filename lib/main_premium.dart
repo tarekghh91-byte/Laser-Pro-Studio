@@ -834,6 +834,7 @@ class SearchPage extends StatelessWidget {
     final q = _cleanCommand(query);
     final today = DateTime.now();
     final todayOnly = DateTime(today.year, today.month, today.day);
+    DateTime handoffDate(core.Order o) => o.deliveredAt ?? o.createdAt;
     final commandReady = q.contains('جاهز') || q.contains('جاهزه');
     final commandActive = q.contains('قيد التنفيذ') || q.contains('عم ينفذ') || q.contains('شغال');
     final commandDelivered = q.contains('تم التسليم') || q.contains('تسلم') || q.contains('مستلم');
@@ -856,8 +857,8 @@ class SearchPage extends StatelessWidget {
       if (commandDebt) return o.outstanding > 0;
       if (commandFinance) {
         if (o.status != 'تم التسليم') return false;
-        if (financeToday) return o.createdAt.year == today.year && o.createdAt.month == today.month && o.createdAt.day == today.day;
-        if (financeMonth) return o.createdAt.year == today.year && o.createdAt.month == today.month;
+        if (financeToday) return handoffDate(o).year == today.year && handoffDate(o).month == today.month && handoffDate(o).day == today.day;
+        if (financeMonth) return handoffDate(o).year == today.year && handoffDate(o).month == today.month;
         return true;
       }
       return _normalizeArabic(o.customer).contains(q) || _normalizeArabic(o.product).contains(q) || o.id.toLowerCase().contains(q);
