@@ -121,11 +121,13 @@ class _PremiumWorkspaceState extends State<PremiumWorkspace> {
       padding: const EdgeInsets.all(24), child: Text(s.error!, textAlign: TextAlign.center))));
     final desktop = MediaQuery.sizeOf(context).width >= 980;
     final page = query.trim().isNotEmpty
-      ? SearchPage(store: s, query: query, onOrders: () => go(1), onInventory: () => go(2))
+      ? SearchPage(store: s, query: query, onOrders: () => go(1), onInventory: () => go(3))
       : switch (selected) {
           1 => core.OrdersPage(store: s, newOrder: () => core.showOrderForm(context, s)),
-          2 => core.InventoryPage(store: s),
-          3 => core.AccountsPage(store: s),
+          2 => CustomersPage(store: s),
+          3 => core.InventoryPage(store: s),
+          4 => core.AccountsPage(store: s),
+          5 => ReportsPage(store: s),
           _ => Dashboard(store: s, newOrder: () => core.showOrderForm(context, s), onNavigate: go),
         };
     return Directionality(
