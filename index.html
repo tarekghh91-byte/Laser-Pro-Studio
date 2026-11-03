@@ -21,8 +21,31 @@ main{min-width:0;padding:25px clamp(14px,3vw,34px) 70px;max-width:1500px;width:1
 <body>
 <div id="root"><div class="login-wrap"><div class="login"><h1>LASER STUDIO PRO</h1><p>جاري تحميل النظام…</p></div></div></div>
 <div id="modal"></div><div id="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="this.onerror=null;this.src='https://unpkg.com/@supabase/supabase-js@2'"></script>
 <script>
+(async()=>{
+  const sources=[
+    "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2",
+    "https://unpkg.com/@supabase/supabase-js@2",
+    "https://cdnjs.cloudflare.com/ajax/libs/supabase/2.49.4/umd/supabase.min.js"
+  ];
+  for(const src of sources){
+    if(window.supabase?.createClient) break;
+    try{
+      await new Promise((resolve,reject)=>{
+        const tag=document.createElement("script");
+        const timer=setTimeout(()=>{tag.remove();reject(new Error("timeout"))},10000);
+        tag.src=src;
+        tag.onload=()=>{clearTimeout(timer);resolve()};
+        tag.onerror=()=>{clearTimeout(timer);tag.remove();reject(new Error("load failed"))};
+        document.head.appendChild(tag);
+      });
+    }catch(e){}
+  }
+  if(!window.supabase?.createClient){
+    document.getElementById("root").innerHTML='<div class="login-wrap"><div class="login"><h1>LASER STUDIO PRO</h1><p>تعذّر تحميل مكتبة الاتصال. افتح الصفحة عبر متصفح Chrome وتأكد من السماح بالإنترنت.</p><button onclick="location.reload()">إعادة المحاولة</button></div></div>';
+    return;
+  }
+  (function startApp(){
 "use strict";
 const URL_BASE="https://lwzgdqtkrwezaipymdet.supabase.co";
 const PUBLIC_KEY="sb_publishable_j_-UerZpooWAAVftOHB-GQ_3KLvCajA";
@@ -550,6 +573,8 @@ state.user=data.session?.user||null;
 if(state.user){try{await loadData();render();subscribeRealtime()}catch(e){toast(e.message||String(e),true);authScreen(false)}}else authScreen(false);
 SB.auth.onAuthStateChange(async(event,session)=>{if(event==="SIGNED_IN"){state.user=session.user;try{await loadData();render();subscribeRealtime()}catch(e){toast(e.message||String(e),true);authScreen(false)}}if(event==="SIGNED_OUT"){await stopRealtime();state.user=null;authScreen(false)}});
 }catch(e){authScreen(false);toast("تعذر بدء النظام: "+(e.message||String(e)),true)}
+})();
+  })();
 })();
 </script>
 </body></html>
