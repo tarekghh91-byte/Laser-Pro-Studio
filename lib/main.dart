@@ -57,10 +57,12 @@ class Order {
     required this.dueDate, required this.price, required this.paid,
     required this.materialCost, required this.status, required this.createdAt,
     this.notes = '', this.phone = '', this.address = '', this.quantity = 1,
+    this.orderNumber = '',
     DateTime? orderDate, List<UsedMaterial>? usedMaterials,
     this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
       : orderDate = orderDate ?? createdAt, usedMaterials = usedMaterials ?? [];
   final String id;
+  String orderNumber;
   String customer;
   String product;
   DateTime dueDate;
@@ -82,7 +84,7 @@ class Order {
   double get totalCost => materialCost + electricCost;
   double get grossMargin => price - totalCost;
   Map<String, dynamic> toJson() => {
-    'id': id, 'customer': customer, 'product': product,
+    'id': id, 'orderNumber': orderNumber, 'customer': customer, 'product': product,
     'dueDate': dueDate.toIso8601String(), 'price': price, 'paid': paid,
     'materialCost': materialCost, 'status': status,
     'createdAt': createdAt.toIso8601String(), 'notes': notes,
@@ -93,7 +95,7 @@ class Order {
     'inventoryDeducted': inventoryDeducted,
   };
   factory Order.fromJson(Map<String, dynamic> j) => Order(
-    id: j['id'] as String, customer: j['customer'] as String,
+    id: j['id'] as String, orderNumber: j['orderNumber'] as String? ?? '', customer: j['customer'] as String,
     product: j['product'] as String,
     dueDate: DateTime.parse(j['dueDate'] as String),
     price: (j['price'] as num).toDouble(),
@@ -304,8 +306,15 @@ class StudioStore extends ChangeNotifier {
         final matches = orders.where((o) => o.id == id);
         if (matches.isEmpty) continue;
         final order = matches.first;
-        final payload = order.toJson();
         try {
+          // Reserve the permanent serial centrally before uploading. Persist it
+          // locally first so a dropped response/retry cannot consume another number.
+          if (order.orderNumber.isEmpty) {
+            order.orderNumber = await _cloud.nextOrderNumber();
+            await _saveLocal();
+            _notify();
+          }
+          final payload = order.toJson();
           final version = await _cloud.put('orders', id, payload, _orderVersions[id] ?? 0);
           _orderVersions[id] = version;
           if (jsonEncode(order.toJson()) == jsonEncode(payload)) _pendingOrders.remove(id);
@@ -574,16 +583,16 @@ class OrderTile extends StatelessWidget {
   final Order order;
   final StudioStore store;
   @override Widget build(BuildContext context) => Card(child: ListTile(
-    title: Text('${order.product} — ${order.customer}'),
+    title: Text('${order.orderNumber.isEmpty ? 'بانتظار الرقم' : order.orderNumber} · ${order.product} — ${order.customer}'),
     subtitle: Text('التسليم: ${date(order.dueDate)}  •  ${order.status}  •  باقي ${money(order.outstanding)}'),
     trailing: const Icon(Icons.open_in_new, color: gold),
     onTap: () => showDialog<void>(context: context, builder: (context) => Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(title: Text('طلب ${order.customer}'), content: SizedBox(
+      child: AlertDialog(title: Text('طلب ${order.orderNumber.isEmpty ? 'بانتظار الرقم' : order.orderNumber} · ${order.customer}'), content: SizedBox(
         width: 450, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('المنتج: ${order.product} · الكمية: ${order.quantity}'),
+            Text('رقم الطلب: ${order.orderNumber.isEmpty ? 'بانتظار المزامنة' : order.orderNumber}'),\n            Text('المنتج: ${order.product} · الكمية: ${order.quantity}'),
             if (order.phone.isNotEmpty) Text('الهاتف: ${order.phone}'),
             if (order.address.isNotEmpty) Text('العنوان: ${order.address}'),
             Text('تاريخ الطلب: ${date(order.orderDate)}'),
@@ -777,7 +786,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
       final electricity = laserElectricity(minutes);
       final priceValue = double.tryParse(price.text) ?? 0;
       return Directionality(textDirection: TextDirection.rtl,
-      child: AlertDialog(title: Text(existing == null ? 'طلب جديد' : 'تعديل الطلب ${existing.id}'), content: SizedBox(width: 480,
+      child: AlertDialog(title: Text(existing == null ? 'طلب جديد' : 'تعديل الطلب ${existing.orderNumber.isEmpty ? existing.id : existing.orderNumber}'), content: SizedBox(width: 480,
         child: Form(key: key, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, children: [
             _field('اسم الزبون', customer, required: true),
