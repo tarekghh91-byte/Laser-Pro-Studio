@@ -36,3 +36,7 @@ begin
   return v_version;
 end
 $function$;
+
+revoke execute on function public.lp_put_sync_record(text,text,jsonb,bigint) from public;
+revoke execute on function public.lp_put_sync_record(text,text,jsonb,bigint) from anon;
+grant execute on function public.lp_put_sync_record(text,text,jsonb,bigint) to authenticated;
