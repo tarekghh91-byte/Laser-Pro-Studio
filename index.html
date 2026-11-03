@@ -21,7 +21,7 @@ main{min-width:0;padding:25px clamp(14px,3vw,34px) 70px;max-width:1500px;width:1
 <body>
 <div id="root"><div class="login-wrap"><div class="login"><h1>LASER STUDIO PRO</h1><p>جاري تحميل النظام…</p></div></div></div>
 <div id="modal"></div><div id="toast"></div>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2" onerror="this.onerror=null;this.src='https://unpkg.com/@supabase/supabase-js@2'"></script>
 <script>
 "use strict";
 const URL_BASE="https://lwzgdqtkrwezaipymdet.supabase.co";
@@ -540,9 +540,16 @@ const p=e.target.closest("[data-page]");if(p){state.page=p.dataset.page;render()
 const a=e.target.closest("[data-action]");if(a)handleAction(a.dataset.action);
 });
 (async()=>{
-const {data}=await SB.auth.getSession();state.user=data.session?.user||null;
+try{
+const {data,error}=await Promise.race([
+SB.auth.getSession(),
+new Promise((_,reject)=>setTimeout(()=>reject(new Error("انتهت مهلة الاتصال أثناء تهيئة النظام. تحقق من الإنترنت ثم أعد تحميل الصفحة.")),12000))
+]);
+if(error)throw error;
+state.user=data.session?.user||null;
 if(state.user){try{await loadData();render();subscribeRealtime()}catch(e){toast(e.message||String(e),true);authScreen(false)}}else authScreen(false);
-SB.auth.onAuthStateChange(async(event,session)=>{if(event==="SIGNED_IN"){state.user=session.user;try{await loadData();render();subscribeRealtime()}catch(e){toast(e.message||String(e),true)}}if(event==="SIGNED_OUT"){await stopRealtime();state.user=null;authScreen(false)}});
+SB.auth.onAuthStateChange(async(event,session)=>{if(event==="SIGNED_IN"){state.user=session.user;try{await loadData();render();subscribeRealtime()}catch(e){toast(e.message||String(e),true);authScreen(false)}}if(event==="SIGNED_OUT"){await stopRealtime();state.user=null;authScreen(false)}});
+}catch(e){authScreen(false);toast("تعذر بدء النظام: "+(e.message||String(e)),true)}
 })();
 </script>
 </body></html>
