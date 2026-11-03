@@ -77,6 +77,23 @@ class Customer {
     archived: j['archived'] as bool? ?? false);
 }
 
+class PaymentEntry {
+  PaymentEntry({required this.id, required this.amount, required this.method,
+    DateTime? receivedAt, this.notes = ''}) : receivedAt = receivedAt ?? DateTime.now();
+  final String id;
+  final double amount;
+  final String method;
+  final DateTime receivedAt;
+  final String notes;
+  Map<String, dynamic> toJson() => {'id': id, 'amount': amount, 'method': method,
+    'receivedAt': receivedAt.toIso8601String(), 'notes': notes};
+  factory PaymentEntry.fromJson(Map<String, dynamic> j) => PaymentEntry(
+    id: j['id'] as String, amount: (j['amount'] as num).toDouble(),
+    method: j['method'] as String? ?? 'غير محددة',
+    receivedAt: DateTime.tryParse(j['receivedAt'] as String? ?? ''),
+    notes: j['notes'] as String? ?? '');
+}
+
 class Order {
   Order({required this.id, required this.customer, required this.product,
     required this.dueDate, required this.price, required this.paid,
@@ -84,9 +101,10 @@ class Order {
     this.notes = '', this.phone = '', this.address = '', this.quantity = 1,
     this.orderNumber = '', this.handoffMethod = '', this.paymentMethod = '',
     this.customerId = '', DateTime? orderDate, DateTime? deliveredAt, List<UsedMaterial>? usedMaterials,
+    List<PaymentEntry>? payments,
     this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
       : orderDate = orderDate ?? createdAt, deliveredAt = deliveredAt,
-        usedMaterials = usedMaterials ?? [];
+        usedMaterials = usedMaterials ?? [], payments = payments ?? [];
   final String id;
   String orderNumber;
   String handoffMethod;
@@ -107,6 +125,7 @@ class Order {
   DateTime orderDate;
   DateTime? deliveredAt;
   List<UsedMaterial> usedMaterials;
+  List<PaymentEntry> payments;
   double laserMinutes;
   double electricCost;
   bool inventoryDeducted;
@@ -122,6 +141,7 @@ class Order {
     'orderDate': orderDate.toIso8601String(),
     'deliveredAt': deliveredAt?.toIso8601String(),
     'usedMaterials': usedMaterials.map((e) => e.toJson()).toList(),
+    'payments': payments.map((e) => e.toJson()).toList(),
     'laserMinutes': laserMinutes, 'electricCost': electricCost,
     'inventoryDeducted': inventoryDeducted,
   };
@@ -142,6 +162,8 @@ class Order {
     deliveredAt: DateTime.tryParse(j['deliveredAt'] as String? ?? ''),
     usedMaterials: (j['usedMaterials'] as List<dynamic>? ?? [])
       .map((e) => UsedMaterial.fromJson(e as Map<String, dynamic>)).toList(),
+    payments: (j['payments'] as List<dynamic>? ?? [])
+      .map((e) => PaymentEntry.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
     laserMinutes: (j['laserMinutes'] as num? ?? 0).toDouble(),
     electricCost: (j['electricCost'] as num? ?? 0).toDouble(),
     inventoryDeducted: j['inventoryDeducted'] as bool? ?? false,
@@ -318,6 +340,16 @@ class StudioStore extends ChangeNotifier {
     customers.add(customer); _pendingCustomers.add(customer.id);
     await _saveLocal(); _notify(); unawaited(syncNow());
   }
+  Future<void> addPayment(Order order, PaymentEntry payment) async {
+    if (payment.amount <= 0 || payment.amount > order.outstanding + 0.000001) {
+      throw ArgumentError('قيمة الدفعة تتجاوز المبلغ المتبقي أو غير صالحة');
+    }
+    order.payments.add(payment);
+    order.paid += payment.amount;
+    order.paymentMethod = payment.method;
+    await _save(orderId: order.id);
+  }
+
   Future<void> updateCustomer(Customer customer) async {
     _pendingCustomers.add(customer.id);
     await _saveLocal(); _notify(); unawaited(syncNow());
@@ -727,6 +759,43 @@ class OrdersPage extends StatelessWidget {
     ]);
   }
 }
+Future<PaymentEntry?> showPaymentDialog(BuildContext context, Order order) async {
+  final amount = TextEditingController(text: order.outstanding.toStringAsFixed(2));
+  final notes = TextEditingController();
+  var method = 'نقداً / باليد';
+  final result = await showDialog<PaymentEntry>(context: context,
+    builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(title: const Text('تسجيل دفعة'),
+        content: SizedBox(width: 380, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('المتبقي: ${money(order.outstanding)}',
+            style: const TextStyle(color: gold, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          TextField(controller: amount, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'قيمة الدفعة')),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(value: method,
+            decoration: const InputDecoration(labelText: 'طريقة الدفع'),
+            items: ['نقداً / باليد', 'مع شخص', 'Whish Money']
+              .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+            onChanged: (v) { if (v != null) refresh(() => method = v); }),
+          const SizedBox(height: 10),
+          TextField(controller: notes, decoration: const InputDecoration(labelText: 'ملاحظة (اختياري)')),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(onPressed: () {
+            final value = double.tryParse(amount.text.trim().replaceAll(',', '.'));
+            if (value == null || value <= 0 || value > order.outstanding + 0.000001) return;
+            Navigator.pop(ctx, PaymentEntry(id: const Uuid().v4(), amount: value,
+              method: method, notes: notes.text.trim()));
+          }, child: const Text('حفظ الدفعة')),
+        ],
+      ))));
+  amount.dispose(); notes.dispose();
+  return result;
+}
+
 Future<Map<String, String>?> showHandoffDialog(BuildContext context, Order order) async {
   var handoff = order.handoffMethod.isEmpty ? 'استلام من المحل' : order.handoffMethod;
   var payment = order.paymentMethod.isEmpty ? 'نقداً / باليد' : order.paymentMethod;
@@ -780,7 +849,15 @@ class OrderTile extends StatelessWidget {
             Text('المقبوض: ${money(order.paid)}'),
             Text('الباقي: ${money(order.outstanding)}'),
             Text('طريقة التسليم: ${order.handoffMethod.isEmpty ? 'غير محددة بعد' : order.handoffMethod}'),
-            Text('طريقة الدفع: ${order.paymentMethod.isEmpty ? 'غير محددة بعد' : order.paymentMethod}'),
+            Text('طريقة الدفع الأخيرة: ${order.paymentMethod.isEmpty ? 'غير محددة بعد' : order.paymentMethod}'),
+            const SizedBox(height: 8),
+            const Text('سجل الدفعات', style: TextStyle(fontWeight: FontWeight.bold)),
+            if (order.payments.isEmpty && order.paid > 0)
+              const Text('المقبوض القديم: لا توجد تفاصيل تاريخية منفصلة للدفعات.'),
+            for (final payment in order.payments)
+              Text('${date(payment.receivedAt)} · ${payment.method} · ${money(payment.amount)}${payment.notes.isEmpty ? '' : ' · ${payment.notes}'}'),
+            if (order.payments.isEmpty && order.paid <= 0)
+              const Text('لم تُسجّل أي دفعة بعد.'),
             const Divider(),
             const Text('تفاصيل تكلفة الطلب', style: TextStyle(fontWeight: FontWeight.bold)),
             for (final line in order.usedMaterials)
@@ -875,16 +952,16 @@ class OrderTile extends StatelessWidget {
               }),
 
             const SizedBox(height: 10),
-            FilledButton(onPressed: () async {
-              final controller = TextEditingController(text: order.paid.toStringAsFixed(2));
-              final result = await showDialog<String>(context: context,
-                builder: (ctx) => AlertDialog(title: const Text('المبلغ المقبوض الإجمالي'),
-                  content: TextField(controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                  actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-                    FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('حفظ'))]));
-              final n = double.tryParse(result ?? '');
-              if (n != null && n >= 0 && n <= order.price) { order.paid = n; await store.updateOrder(order); }
-            }, child: const Text('تحديث المقبوض')),
+            FilledButton.icon(onPressed: order.outstanding <= 0 ? null : () async {
+              final payment = await showPaymentDialog(context, order);
+              if (payment == null) return;
+              try {
+                await store.addPayment(order, payment);
+              } catch (e) {
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('تعذّر تسجيل الدفعة: $e')));
+              }
+            }, icon: const Icon(Icons.add_card_rounded), child: const Text('تسجيل دفعة جديدة')),
           ]))), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق'))])))));
 }
 
