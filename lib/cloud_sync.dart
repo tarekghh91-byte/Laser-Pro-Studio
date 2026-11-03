@@ -14,6 +14,14 @@ class CloudSync {
   final String ownerId;
   SupabaseClient get _db => Supabase.instance.client;
 
+  Future<String> nextOrderNumber() async {
+    final value = await _db.rpc('lp_next_order_number');
+    if (value is! String || !value.startsWith('LP')) {
+      throw StateError('تعذّر إصدار رقم طلب تسلسلي');
+    }
+    return value;
+  }
+
   Future<List<CloudRecord>> list(String collection) async {
     final data = await _db
       .from('lp_sync_records')
