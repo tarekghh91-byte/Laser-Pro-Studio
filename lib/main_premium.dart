@@ -707,8 +707,10 @@ class ReportsPage extends StatelessWidget {
   @override Widget build(BuildContext context) {
     final now = DateTime.now();
     final delivered = store.orders.where((o) => o.status == 'تم التسليم').toList();
-    final month = delivered.where((o) => o.createdAt.year == now.year && o.createdAt.month == now.month).toList();
-    final today = delivered.where((o) => o.createdAt.year == now.year && o.createdAt.month == now.month && o.createdAt.day == now.day).toList();
+    // Legacy delivered records fall back to createdAt; new handoffs use deliveredAt.
+    DateTime handoffDate(core.Order o) => o.deliveredAt ?? o.createdAt;
+    final month = delivered.where((o) => handoffDate(o).year == now.year && handoffDate(o).month == now.month).toList();
+    final today = delivered.where((o) => handoffDate(o).year == now.year && handoffDate(o).month == now.month && handoffDate(o).day == now.day).toList();
     Widget reportCard(String title, List<core.Order> orders, IconData icon) {
       final sales = orders.fold<double>(0, (v, o) => v + o.price);
       final cost = orders.fold<double>(0, (v, o) => v + o.totalCost);
