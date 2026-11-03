@@ -540,10 +540,12 @@ class StudioStore extends ChangeNotifier {
       throw ArgumentError('راجع كمية الشراء وسعر العبوة');
     }
     final material = found.first;
-    final oldValue = material.quantity * material.unitCost;
+    final oldQuantity = material.quantity;
+    final oldUnitCost = material.unitCost;
+    final oldValue = oldQuantity * oldUnitCost;
     final newQty = p.baseQuantity;
     final newValue = newQty * p.unitCost;
-    final combinedQty = material.quantity + newQty;
+    final combinedQty = oldQuantity + newQty;
     material.quantity = combinedQty;
     if (combinedQty > 0) material.unitCost = (oldValue + newValue) / combinedQty;
     purchases.add(p);
@@ -551,9 +553,8 @@ class StudioStore extends ChangeNotifier {
     try {
       await _saveLocal(); _notify(); unawaited(syncNow());
     } catch (_) {
-      material.quantity -= newQty;
-      material.unitCost = combinedQty > newQty && material.quantity > 0
-        ? (oldValue / material.quantity) : material.unitCost;
+      material.quantity = oldQuantity;
+      material.unitCost = oldUnitCost;
       purchases.removeWhere((x) => x.id == p.id);
       _pendingMaterials.remove(material.id); _pendingPurchases.remove(p.id);
       rethrow;
