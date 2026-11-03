@@ -57,13 +57,15 @@ class Order {
     required this.dueDate, required this.price, required this.paid,
     required this.materialCost, required this.status, required this.createdAt,
     this.notes = '', this.phone = '', this.address = '', this.quantity = 1,
-    this.orderNumber = '',
+    this.orderNumber = '', this.handoffMethod = '', this.paymentMethod = '',
     DateTime? orderDate, DateTime? deliveredAt, List<UsedMaterial>? usedMaterials,
     this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
       : orderDate = orderDate ?? createdAt, deliveredAt = deliveredAt,
         usedMaterials = usedMaterials ?? [];
   final String id;
   String orderNumber;
+  String handoffMethod;
+  String paymentMethod;
   String customer;
   String product;
   DateTime dueDate;
@@ -86,7 +88,7 @@ class Order {
   double get totalCost => materialCost + electricCost;
   double get grossMargin => price - totalCost;
   Map<String, dynamic> toJson() => {
-    'id': id, 'orderNumber': orderNumber, 'customer': customer, 'product': product,
+    'id': id, 'orderNumber': orderNumber, 'handoffMethod': handoffMethod, 'paymentMethod': paymentMethod, 'customer': customer, product: product,
     'dueDate': dueDate.toIso8601String(), 'price': price, 'paid': paid,
     'materialCost': materialCost, 'status': status,
     'createdAt': createdAt.toIso8601String(), 'notes': notes,
@@ -98,7 +100,8 @@ class Order {
     'inventoryDeducted': inventoryDeducted,
   };
   factory Order.fromJson(Map<String, dynamic> j) => Order(
-    id: j['id'] as String, orderNumber: j['orderNumber'] as String? ?? '', customer: j['customer'] as String,
+    id: j['id'] as String, orderNumber: j['orderNumber'] as String? ?? '',
+    handoffMethod: j['handoffMethod'] as String? ?? '', paymentMethod: j['paymentMethod'] as String? ?? '', customer: j['customer'] as String,
     product: j['product'] as String,
     dueDate: DateTime.parse(j['dueDate'] as String),
     price: (j['price'] as num).toDouble(),
@@ -582,6 +585,35 @@ class OrdersPage extends StatelessWidget {
     ]);
   }
 }
+Future<Map<String, String>?> showHandoffDialog(BuildContext context, Order order) async {
+  var handoff = order.handoffMethod.isEmpty ? 'استلام من المحل' : order.handoffMethod;
+  var payment = order.paymentMethod.isEmpty ? 'نقداً / باليد' : order.paymentMethod;
+  return showDialog<Map<String, String>>(context: context, builder: (ctx) =>
+    StatefulBuilder(builder: (ctx, refresh) => Directionality(textDirection: TextDirection.rtl,
+      child: AlertDialog(title: const Text('تسجيل تسليم الطلب'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<String>(value: handoff,
+            decoration: const InputDecoration(labelText: 'طريقة التسليم'),
+            items: ['استلام من المحل', 'مع شخص', 'توصيل']
+              .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+            onChanged: (v) { if (v != null) refresh(() => handoff = v); }),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(value: payment,
+            decoration: const InputDecoration(labelText: 'طريقة الدفع'),
+            items: ['نقداً / باليد', 'مع شخص', 'Whish Money']
+              .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+            onChanged: (v) { if (v != null) refresh(() => payment = v); }),
+          const SizedBox(height: 8),
+          Text('المقبوض المسجّل: ${money(order.paid)} من ${money(order.price)}',
+            style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx,
+            {'handoff': handoff, 'payment': payment}), child: const Text('تأكيد التسليم')),
+        ]))));
+}
+
 class OrderTile extends StatelessWidget {
   const OrderTile({super.key, required this.order, required this.store});
   final Order order;
@@ -605,6 +637,8 @@ class OrderTile extends StatelessWidget {
             Text('السعر: ${money(order.price)}'),
             Text('المقبوض: ${money(order.paid)}'),
             Text('الباقي: ${money(order.outstanding)}'),
+            Text('طريقة التسليم: ${order.handoffMethod.isEmpty ? 'غير محددة بعد' : order.handoffMethod}'),
+            Text('طريقة الدفع: ${order.paymentMethod.isEmpty ? 'غير محددة بعد' : order.paymentMethod}'),
             const Divider(),
             const Text('تفاصيل تكلفة الطلب', style: TextStyle(fontWeight: FontWeight.bold)),
             for (final line in order.usedMaterials)
@@ -686,6 +720,12 @@ class OrderTile extends StatelessWidget {
                   ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
                     content: Text('يجب تأكيد الجاهزية وخصم المواد أولاً، ثم تسجيل التسليم.')));
                   return;
+                }
+                if (v == 'تم التسليم') {
+                  final handoff = await showHandoffDialog(context, order);
+                  if (handoff == null) return;
+                  order.handoffMethod = handoff['handoff']!;
+                  order.paymentMethod = handoff['payment']!;
                 }
                 order.status = v;
                 if (v == 'تم التسليم') order.deliveredAt = DateTime.now();
