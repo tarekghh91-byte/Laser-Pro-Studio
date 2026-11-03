@@ -107,6 +107,7 @@ class _PremiumWorkspaceState extends State<PremiumWorkspace> {
                 (5, 'التقارير', Icons.query_stats_rounded),
                 (6, 'كتالوج المنتجات', Icons.category_rounded),
                 (7, 'المصاريف', Icons.receipt_long_rounded),
+                (8, 'المورّدون والمشتريات', Icons.local_shipping_rounded),
               ]) ListTile(leading: Icon(item.$3, color: gold), title: Text(item.$2),
                 trailing: const Icon(Icons.chevron_left_rounded),
                 onTap: () { Navigator.pop(ctx); setState(() { selected = item.$1; query = ''; }); }),
@@ -132,6 +133,7 @@ class _PremiumWorkspaceState extends State<PremiumWorkspace> {
           5 => ReportsPage(store: s),
           6 => ProductCatalogPage(store: s),
           7 => ExpensesPage(store: s),
+          8 => SuppliersPurchasesPage(store: s),
           _ => Dashboard(store: s, newOrder: () => core.showOrderForm(context, s), onNavigate: go),
         };
     return Directionality(
@@ -173,11 +175,12 @@ class Sidebar extends StatelessWidget {
   final String syncStatus;
 
   @override Widget build(BuildContext context) {
-    const labels = ['نظرة عامة', 'الطلبات', 'الزبائن', 'المخزون', 'الحسابات', 'التقارير', 'كتالوج المنتجات', 'المصاريف'];
+    const labels = ['نظرة عامة', 'الطلبات', 'الزبائن', 'المخزون', 'الحسابات', 'التقارير', 'كتالوج المنتجات', 'المصاريف', 'المورّدون والمشتريات'];
     const icons = [Icons.grid_view_rounded, Icons.receipt_long_rounded,
       Icons.people_alt_rounded, Icons.inventory_2_rounded,
       Icons.account_balance_wallet_rounded, Icons.query_stats_rounded,
-      Icons.category_rounded, Icons.receipt_long_rounded];
+      Icons.category_rounded, Icons.receipt_long_rounded,
+      Icons.local_shipping_rounded];
     return Container(
       width: 252, padding: const EdgeInsets.fromLTRB(17, 24, 17, 17),
       decoration: const BoxDecoration(color: surface, border: Border(left: BorderSide(color: line))),
@@ -887,6 +890,213 @@ class ExpensesPage extends StatelessWidget {
       actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
         FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
     if (ok == true) await store.deleteExpense(e);
+  }
+}
+
+class SuppliersPurchasesPage extends StatelessWidget {
+  const SuppliersPurchasesPage({super.key, required this.store});
+  final core.StudioStore store;
+
+  @override Widget build(BuildContext context) {
+    final suppliers = [...store.suppliers]..sort((a, b) => a.name.compareTo(b.name));
+    final purchases = [...store.purchases]..sort((a, b) => b.purchaseDate.compareTo(a.purchaseDate));
+    final now = DateTime.now();
+    final month = purchases.where((p) => p.purchaseDate.year == now.year &&
+      p.purchaseDate.month == now.month).fold<double>(0, (v, p) => v + p.totalAmount);
+    final all = purchases.fold<double>(0, (v, p) => v + p.totalAmount);
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 22, 16, 90), children: [
+      const Text('المورّدون والمشتريات', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 4),
+      const Text('استلام المواد يرفع المخزون ويحدّث كلفة الوحدة تلقائياً.',
+        style: TextStyle(color: muted, fontSize: 11)),
+      const SizedBox(height: 14),
+      Row(children: [
+        Expanded(child: _MiniStat(label: 'مشتريات هذا الشهر', value: core.money(month), icon: Icons.calendar_month_outlined)),
+        const SizedBox(width: 9),
+        Expanded(child: _MiniStat(label: 'إجمالي المشتريات', value: core.money(all), icon: Icons.shopping_cart_outlined)),
+      ]),
+      const SizedBox(height: 15),
+      Row(children: [
+        const Expanded(child: Text('المورّدون', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900))),
+        OutlinedButton.icon(onPressed: () => _editSupplier(context), icon: const Icon(Icons.person_add_alt_1),
+          label: const Text('إضافة مورّد')),
+      ]),
+      if (suppliers.isEmpty) const EmptyState('أضف بيانات المورّد أولاً لتربط فواتير الشراء به.'),
+      for (final s in suppliers) Card(margin: const EdgeInsets.only(bottom: 7),
+        child: ListTile(
+          leading: CircleAvatar(backgroundColor: raised, child: Icon(Icons.storefront_outlined,
+            color: s.active ? gold : muted)),
+          title: Text(s.name, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text([if (s.phone.isNotEmpty) s.phone, if (s.address.isNotEmpty) s.address,
+            if (!s.active) 'موقوف'].join(' • '), style: const TextStyle(color: muted, fontSize: 10)),
+          trailing: PopupMenuButton<String>(onSelected: (v) async {
+            if (v == 'edit') await _editSupplier(context, existing: s);
+            if (v == 'toggle') { s.active = !s.active; await store.updateSupplier(s); }
+          }, itemBuilder: (_) => const [
+            PopupMenuItem(value: 'edit', child: Text('تعديل بيانات المورّد')),
+            PopupMenuItem(value: 'toggle', child: Text('تفعيل / إيقاف')),
+          ]),
+        )),
+      const Divider(height: 28),
+      Row(children: [
+        const Expanded(child: Text('استلام بضاعة جديدة', style: TextStyle(fontSize: 17, fontWeight: FontWeight.w900))),
+        FilledButton.icon(onPressed: store.materials.isEmpty || suppliers.where((s) => s.active).isEmpty
+          ? null : () => _receive(context), icon: const Icon(Icons.add_shopping_cart),
+          label: const Text('تسجيل شراء')),
+      ]),
+      const SizedBox(height: 5),
+      const Text('كل عملية استلام تُسجّل كحركة مخزون مستقلة. لا تُضاف إلى المصاريف التشغيلية.',
+        style: TextStyle(color: muted, fontSize: 10)),
+      const SizedBox(height: 10),
+      if (purchases.isEmpty) const EmptyState('لا توجد فواتير استلام مسجّلة بعد.'),
+      for (final p in purchases) Card(margin: const EdgeInsets.only(bottom: 8),
+        child: ListTile(
+          leading: const CircleAvatar(backgroundColor: raised,
+            child: Icon(Icons.inventory_2_outlined, color: gold)),
+          title: Text(p.materialName, style: const TextStyle(fontWeight: FontWeight.w800)),
+          subtitle: Text('${p.supplierName} • ${p.packageCount.toStringAsFixed(2)} عبوة • ${p.baseQuantity.toStringAsFixed(2)} وحدة\n'
+            '${p.invoiceNumber.isEmpty ? 'من دون رقم فاتورة' : 'فاتورة ${p.invoiceNumber}'} • '
+            '${p.purchaseDate.toLocal().toString().substring(0, 10)} • ${p.paymentMethod}',
+            style: const TextStyle(color: muted, fontSize: 10)),
+          isThreeLine: true,
+          trailing: Text(core.money(p.totalAmount),
+            style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+        )),
+    ]);
+  }
+
+  Future<void> _editSupplier(BuildContext context, {core.Supplier? existing}) async {
+    final name = TextEditingController(text: existing?.name ?? '');
+    final phone = TextEditingController(text: existing?.phone ?? '');
+    final address = TextEditingController(text: existing?.address ?? '');
+    final notes = TextEditingController(text: existing?.notes ?? '');
+    final result = await showDialog<bool>(context: context, builder: (ctx) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(title: Text(existing == null ? 'إضافة مورّد' : 'تعديل المورّد'),
+        content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          TextField(controller: name, decoration: const InputDecoration(labelText: 'اسم المورّد')),
+          const SizedBox(height: 8), TextField(controller: phone, keyboardType: TextInputType.phone,
+            decoration: const InputDecoration(labelText: 'رقم الهاتف')),
+          const SizedBox(height: 8), TextField(controller: address, decoration: const InputDecoration(labelText: 'العنوان')),
+          const SizedBox(height: 8), TextField(controller: notes, maxLines: 2,
+            decoration: const InputDecoration(labelText: 'ملاحظات')),
+        ]))),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+          FilledButton(onPressed: () { if (name.text.trim().isNotEmpty) Navigator.pop(ctx, true); },
+            child: const Text('حفظ المورّد')),
+        ],
+      )));
+    if (result == true) {
+      if (existing == null) {
+        await store.addSupplier(core.Supplier(id: const Uuid().v4(), name: name.text.trim(),
+          phone: phone.text.trim(), address: address.text.trim(), notes: notes.text.trim()));
+      } else {
+        existing.name = name.text.trim(); existing.phone = phone.text.trim();
+        existing.address = address.text.trim(); existing.notes = notes.text.trim();
+        await store.updateSupplier(existing);
+      }
+    }
+    name.dispose(); phone.dispose(); address.dispose(); notes.dispose();
+  }
+
+  Future<void> _receive(BuildContext context) async {
+    final activeSuppliers = store.suppliers.where((s) => s.active).toList();
+    final materials = store.materials.toList();
+    String? supplierId = activeSuppliers.first.id;
+    String? materialId = materials.first.id;
+    final count = TextEditingController(text: '1');
+    final packageCost = TextEditingController(text: '0');
+    final invoice = TextEditingController();
+    final notes = TextEditingController();
+    var method = 'نقداً / باليد';
+    var receivedAt = DateTime.now();
+    final result = await showDialog<bool>(context: context, builder: (ctx) => StatefulBuilder(
+      builder: (ctx, refresh) {
+        final material = materials.firstWhere((m) => m.id == materialId);
+        final packs = double.tryParse(count.text.replaceAll(',', '.')) ?? 0;
+        final cost = double.tryParse(packageCost.text.replaceAll(',', '.')) ?? 0;
+        final valid = packs > 0 && cost >= 0 && packs.isFinite && cost.isFinite;
+        return Directionality(textDirection: TextDirection.rtl,
+          child: AlertDialog(title: const Text('تسجيل فاتورة واستلام مخزون'),
+            content: SizedBox(width: 460, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              DropdownButtonFormField<String>(value: supplierId, isExpanded: true,
+                decoration: const InputDecoration(labelText: 'المورّد'),
+                items: activeSuppliers.map((s) => DropdownMenuItem(value: s.id, child: Text(s.name))).toList(),
+                onChanged: (v) { if (v != null) refresh(() => supplierId = v); }),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(value: materialId, isExpanded: true,
+                decoration: const InputDecoration(labelText: 'المادة المستلمة'),
+                items: materials.map((m) => DropdownMenuItem(value: m.id,
+                  child: Text('${m.name} — ${m.unit}'))).toList(),
+                onChanged: (v) { if (v != null) refresh(() => materialId = v); }),
+              const SizedBox(height: 8),
+              TextField(controller: count, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'عدد الألواح / الرولات / العبوات')),
+              const SizedBox(height: 8),
+              TextField(controller: packageCost, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'سعر اللوح أو الرول أو العبوة بالدولار')),
+              const SizedBox(height: 9),
+              Container(width: double.infinity, padding: const EdgeInsets.all(11),
+                decoration: BoxDecoration(color: raised, borderRadius: BorderRadius.circular(12)),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text('الكمية التي ستدخل المخزون: ${(packs * material.packUnits).toStringAsFixed(2)} ${material.unit}',
+                    style: const TextStyle(fontWeight: FontWeight.w800)),
+                  Text('إجمالي الفاتورة: ${core.money(packs * cost)}',
+                    style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+                  Text('كلفة الوحدة الجديدة: ${(material.packUnits > 0 ? cost / material.packUnits : 0).toStringAsFixed(6)}',
+                    style: const TextStyle(color: muted, fontSize: 10)),
+                ])),
+              const SizedBox(height: 8),
+              TextField(controller: invoice, decoration: const InputDecoration(labelText: 'رقم الفاتورة (اختياري)')),
+              const SizedBox(height: 8),
+              DropdownButtonFormField<String>(value: method,
+                decoration: const InputDecoration(labelText: 'طريقة الدفع'),
+                items: ['نقداً / باليد', 'Whish Money', 'تحويل بنكي', 'على الحساب', 'مع شخص']
+                  .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+                onChanged: (v) { if (v != null) refresh(() => method = v); }),
+              const SizedBox(height: 8),
+              ListTile(contentPadding: EdgeInsets.zero, title: const Text('تاريخ الاستلام'),
+                subtitle: Text(receivedAt.toLocal().toString().substring(0, 10)),
+                trailing: IconButton(icon: const Icon(Icons.calendar_month, color: gold),
+                  onPressed: () async {
+                    final d = await showDatePicker(context: ctx, initialDate: receivedAt,
+                      firstDate: DateTime(2020), lastDate: DateTime(2100));
+                    if (d != null) refresh(() => receivedAt = d);
+                  })),
+              TextField(controller: notes, maxLines: 2,
+                decoration: const InputDecoration(labelText: 'ملاحظات')),
+            ]))),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+              FilledButton(onPressed: valid ? () => Navigator.pop(ctx, true) : null,
+                child: const Text('تأكيد الاستلام وإضافة للمخزون')),
+            ],
+          ));
+      }));
+    if (result == true && supplierId != null && materialId != null) {
+      final supplier = activeSuppliers.firstWhere((s) => s.id == supplierId);
+      final material = materials.firstWhere((m) => m.id == materialId);
+      final packs = double.parse(count.text.replaceAll(',', '.'));
+      final cost = double.parse(packageCost.text.replaceAll(',', '.'));
+      final units = packs * material.packUnits;
+      final unitCost = cost / material.packUnits;
+      final purchase = core.StockPurchase(id: const Uuid().v4(),
+        supplierId: supplier.id, supplierName: supplier.name,
+        materialId: material.id, materialName: material.name,
+        packageCount: packs, packUnits: material.packUnits,
+        baseQuantity: units, packageCost: cost, unitCost: unitCost,
+        totalAmount: packs * cost, paymentMethod: method,
+        invoiceNumber: invoice.text.trim(), purchaseDate: receivedAt, notes: notes.text.trim());
+      try {
+        await store.recordPurchase(purchase);
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('تم استلام ${units.toStringAsFixed(2)} ${material.unit} وإضافتها للمخزون')));
+      } catch (e) {
+        if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('تعذّر تسجيل الاستلام: $e')));
+      }
+    }
+    count.dispose(); packageCost.dispose(); invoice.dispose(); notes.dispose();
   }
 }
 
