@@ -542,6 +542,7 @@ class StudioStore extends ChangeNotifier {
     final material = found.first;
     final oldQuantity = material.quantity;
     final oldUnitCost = material.unitCost;
+    final wasMaterialPending = _pendingMaterials.contains(material.id);
     final oldValue = oldQuantity * oldUnitCost;
     final newQty = p.baseQuantity;
     final newValue = newQty * p.unitCost;
@@ -556,7 +557,7 @@ class StudioStore extends ChangeNotifier {
       material.quantity = oldQuantity;
       material.unitCost = oldUnitCost;
       purchases.removeWhere((x) => x.id == p.id);
-      _pendingMaterials.remove(material.id); _pendingPurchases.remove(p.id);
+      if (!wasMaterialPending) _pendingMaterials.remove(material.id);\n      _pendingPurchases.remove(p.id);
       rethrow;
     }
   }
