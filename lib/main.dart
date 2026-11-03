@@ -442,7 +442,15 @@ class StudioStore extends ChangeNotifier {
           _customerVersions[id] = version;
           _pendingCustomers.remove(id);
         } catch (e) {
-          if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; }
+          if (e.toString().contains('SYNC_CONFLICT')) {
+            if ((_customerVersions[id] ?? 0) == 0) {
+              // Two devices may create the same phone-based profile offline.
+              // Its deterministic ID means the remote record is the same customer.
+              _pendingCustomers.remove(id);
+              continue;
+            }
+            conflict = true; continue;
+          }
           rethrow;
         }
       }
