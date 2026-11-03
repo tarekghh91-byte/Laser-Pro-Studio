@@ -58,9 +58,10 @@ class Order {
     required this.materialCost, required this.status, required this.createdAt,
     this.notes = '', this.phone = '', this.address = '', this.quantity = 1,
     this.orderNumber = '',
-    DateTime? orderDate, List<UsedMaterial>? usedMaterials,
+    DateTime? orderDate, DateTime? deliveredAt, List<UsedMaterial>? usedMaterials,
     this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
-      : orderDate = orderDate ?? createdAt, usedMaterials = usedMaterials ?? [];
+      : orderDate = orderDate ?? createdAt, deliveredAt = deliveredAt,
+        usedMaterials = usedMaterials ?? [];
   final String id;
   String orderNumber;
   String customer;
@@ -76,6 +77,7 @@ class Order {
   String address;
   int quantity;
   DateTime orderDate;
+  DateTime? deliveredAt;
   List<UsedMaterial> usedMaterials;
   double laserMinutes;
   double electricCost;
@@ -90,6 +92,7 @@ class Order {
     'createdAt': createdAt.toIso8601String(), 'notes': notes,
     'phone': phone, 'address': address, 'quantity': quantity,
     'orderDate': orderDate.toIso8601String(),
+    'deliveredAt': deliveredAt?.toIso8601String(),
     'usedMaterials': usedMaterials.map((e) => e.toJson()).toList(),
     'laserMinutes': laserMinutes, 'electricCost': electricCost,
     'inventoryDeducted': inventoryDeducted,
@@ -107,6 +110,7 @@ class Order {
     phone: j['phone'] as String? ?? '', address: j['address'] as String? ?? '',
     quantity: (j['quantity'] as num? ?? 1).toInt(),
     orderDate: DateTime.tryParse(j['orderDate'] as String? ?? '') ?? DateTime.parse(j['createdAt'] as String),
+    deliveredAt: DateTime.tryParse(j['deliveredAt'] as String? ?? ''),
     usedMaterials: (j['usedMaterials'] as List<dynamic>? ?? [])
       .map((e) => UsedMaterial.fromJson(e as Map<String, dynamic>)).toList(),
     laserMinutes: (j['laserMinutes'] as num? ?? 0).toDouble(),
@@ -674,6 +678,7 @@ class OrderTile extends StatelessWidget {
                   return;
                 }
                 order.status = v;
+                if (v == 'تم التسليم') order.deliveredAt = DateTime.now();
                 await store.updateOrder(order);
               }),
 
