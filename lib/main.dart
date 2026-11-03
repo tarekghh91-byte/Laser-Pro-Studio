@@ -557,7 +557,8 @@ class StudioStore extends ChangeNotifier {
       material.quantity = oldQuantity;
       material.unitCost = oldUnitCost;
       purchases.removeWhere((x) => x.id == p.id);
-      if (!wasMaterialPending) _pendingMaterials.remove(material.id);\n      _pendingPurchases.remove(p.id);
+      if (!wasMaterialPending) _pendingMaterials.remove(material.id);
+      _pendingPurchases.remove(p.id);
       rethrow;
     }
   }
