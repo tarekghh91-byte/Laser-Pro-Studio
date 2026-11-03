@@ -238,11 +238,11 @@ field("customer_address","عنوان السكن","text","")+
 field("order_date","تاريخ الطلب","date",today())+
 field("delivery_deadline","موعد التسليم","date","")+
 field("agreed_price","السعر المتفق عليه ($)","number","0",'min="0" step=".01" required')+
-field("width_cm","العرض (سم)","number","","min="0" step=".1"')+
-field("height_cm","الارتفاع (سم)","number","","min="0" step=".1"')+
+field("width_cm","العرض (سم)","number","",'min="0" step=".1"')+
+field("height_cm","الارتفاع (سم)","number","",'min="0" step=".1"')+
 field("base_height_cm","ارتفاع القاعدة (سم)","number","4",'min="0" step=".1"')+
-field("background_width_cm","عرض الخلفية (سم)","number","","min="0" step=".1"')+
-field("background_height_cm","ارتفاع الخلفية (سم)","number","","min="0" step=".1"')+
+field("background_width_cm","عرض الخلفية (سم)","number","",'min="0" step=".1"')+
+field("background_height_cm","ارتفاع الخلفية (سم)","number","",'min="0" step=".1"')+
 '<label class="check"><input type="checkbox" name="has_base"> مع قاعدة</label><label class="check"><input type="checkbox" name="has_background"> مع خلفية</label><label class="check"><input type="checkbox" name="is_urgent"> طلب مستعجل</label><label class="check"><input type="checkbox" name="needs_cut_files" checked> يحتاج ملفات قص</label>'+textarea("notes","ملاحظات")+'</div><div class="hint">رقم الطلب يتولد تلقائياً من قاعدة البيانات. يبدأ النظام من التسلسل المحفوظ، ولا يمكن تعديل الرقم بعد إنشائه.</div>';
 openModal("طلب جديد",body,async f=>{
 const product=products.find(p=>p.id===f.get("product_type_id"));
