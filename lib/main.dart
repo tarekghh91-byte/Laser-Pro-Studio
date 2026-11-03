@@ -290,15 +290,21 @@ class StudioStore extends ChangeNotifier {
 
   Customer _ensureCustomer(Order order) {
     if (order.customerId.isNotEmpty) {
-      final found = customers.where((c) => c.id == order.customerId);
-      if (found.isNotEmpty) return found.first;
+      final linked = customers.where((c) => c.id == order.customerId);
+      if (linked.isNotEmpty) return linked.first;
     }
+    final normalizedPhone = order.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    final normalizedName = order.customer.trim().toLowerCase();
+    final match = customers.where((c) {
+      final phone = c.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+      if (normalizedPhone.isNotEmpty && phone.isNotEmpty) return phone == normalizedPhone;
+      return c.name.trim().toLowerCase() == normalizedName;
+    });
     final key = _customerKey(order.customer, order.phone);
-    final id = _stableCustomerId(key);
-    final found = customers.where((c) => c.id == id);
-    final customer = found.isNotEmpty ? found.first : Customer(
+    final id = match.isNotEmpty ? match.first.id : _stableCustomerId(key);
+    final customer = match.isNotEmpty ? match.first : Customer(
       id: id, name: order.customer, phone: order.phone, address: order.address);
-    if (found.isEmpty) { customers.add(customer); _pendingCustomers.add(id); }
+    if (match.isEmpty) { customers.add(customer); _pendingCustomers.add(id); }
     order.customerId = id;
     return customer;
   }
