@@ -333,7 +333,7 @@ class StudioStore extends ChangeNotifier {
 
   Future<void> _saveLocal() {
     final content = jsonEncode({
-      'schemaVersion': 3,
+      'schemaVersion': 4,
       'orders': orders.map((e) => e.toJson()).toList(),
       'materials': materials.map((e) => e.toJson()).toList(),
       'customers': customers.map((e) => e.toJson()).toList(),
