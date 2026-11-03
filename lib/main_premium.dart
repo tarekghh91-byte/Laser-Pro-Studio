@@ -126,7 +126,7 @@ class _PremiumWorkspaceState extends State<PremiumWorkspace> {
           1 => core.OrdersPage(store: s, newOrder: () => core.showOrderForm(context, s)),
           2 => CustomersPage(store: s),
           3 => core.InventoryPage(store: s),
-          4 => core.AccountsPage(store: s),
+          4 => PremiumAccountsPage(store: s),
           5 => ReportsPage(store: s),
           _ => Dashboard(store: s, newOrder: () => core.showOrderForm(context, s), onNavigate: go),
         };
@@ -307,10 +307,10 @@ class Dashboard extends StatelessWidget {
         LayoutBuilder(builder: (context, c) {
           final columns = c.maxWidth >= 950 ? 4 : 2;
           final items = [
-            _Metric('طلبات قيد العمل', '${open.length}', Icons.precision_manufacturing_outlined, 'تحتاج متابعة'),
-            _Metric('تسليم قريب', '${due.length}', Icons.event_available_outlined, 'اليوم أو خلال 24 ساعة'),
-            _Metric('مبالغ متبقية', core.money(debt), Icons.payments_outlined, 'بحسب الدفعات المسجلة'),
-            _Metric('مواد منخفضة', '${low.length}', Icons.inventory_2_outlined, 'تحت حد التنبيه'),
+            _Metric('طلبات قيد العمل', '${open.length}', Icons.precision_manufacturing_outlined, 'تحتاج متابعة', () => onNavigate(1)),
+            _Metric('تسليم قريب', '${due.length}', Icons.event_available_outlined, 'اليوم أو خلال 24 ساعة', () => onNavigate(1)),
+            _Metric('مبالغ متبقية', core.money(debt), Icons.payments_outlined, 'بحسب الدفعات المسجلة', () => onNavigate(4)),
+            _Metric('مواد منخفضة', '${low.length}', Icons.inventory_2_outlined, 'تحت حد التنبيه', () => onNavigate(3)),
           ];
           return GridView.count(shrinkWrap: true, physics: const NeverScrollableScrollPhysics(),
             crossAxisCount: columns, crossAxisSpacing: 10, mainAxisSpacing: 10,
@@ -346,12 +346,14 @@ class Dashboard extends StatelessWidget {
               Column(children: low.take(5).map((m) => Container(margin: const EdgeInsets.only(bottom: 7),
                 padding: const EdgeInsets.all(11), decoration: BoxDecoration(color: raised,
                   borderRadius: BorderRadius.circular(11)),
-                child: Row(children: [
-                  const Icon(Icons.inventory_2_outlined, color: gold, size: 17),
-                  const SizedBox(width: 9),
-                  Expanded(child: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
-                  Text('${m.quantity.toStringAsFixed(1)} ${m.unit}', style: const TextStyle(color: muted, fontSize: 10)),
-                ]))).toList()));
+                child: InkWell(onTap: () => onNavigate(3), borderRadius: BorderRadius.circular(11),
+                  child: Row(children: [
+                    const Icon(Icons.inventory_2_outlined, color: gold, size: 17),
+                    const SizedBox(width: 9),
+                    Expanded(child: Text(m.name, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 12))),
+                    Text('${m.quantity.toStringAsFixed(1)} ${m.unit}', style: const TextStyle(color: muted, fontSize: 10)),
+                    const Icon(Icons.chevron_left_rounded, color: muted, size: 15),
+                  ])))).toList()));
           if (c.maxWidth < 900) return Column(children: [left, const SizedBox(height: 11), right]);
           return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Expanded(child: left), const SizedBox(width: 11), Expanded(child: right)]);
@@ -364,24 +366,27 @@ class Dashboard extends StatelessWidget {
 }
 
 class _Metric {
-  const _Metric(this.label, this.value, this.icon, this.note);
+  const _Metric(this.label, this.value, this.icon, this.note, this.onTap);
   final String label, value, note;
   final IconData icon;
+  final VoidCallback onTap;
 }
 class MetricCard extends StatelessWidget {
   const MetricCard({super.key, required this.metric});
   final _Metric metric;
-  @override Widget build(BuildContext context) => Card(child: Padding(
-    padding: const EdgeInsets.all(13), child: Column(crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
-        Icon(metric.icon, color: gold, size: 19),
+  @override Widget build(BuildContext context) => Card(child: InkWell(
+    onTap: metric.onTap, borderRadius: BorderRadius.circular(17),
+    child: Padding(padding: const EdgeInsets.all(13), child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+        Row(children: [Icon(metric.icon, color: gold, size: 19), const Spacer(),
+          const Icon(Icons.north_west_rounded, color: muted, size: 12)]),
         Text(metric.value, maxLines: 1, overflow: TextOverflow.ellipsis,
           style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w900)),
         Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(metric.label, style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w800)),
           Text(metric.note, style: const TextStyle(fontSize: 9, color: muted)),
         ]),
-      ])));
+      ]))));
 }
 
 class _Action {
@@ -629,6 +634,69 @@ class _MiniStat extends StatelessWidget {
         Text(label, style: const TextStyle(color: muted, fontSize: 10)),
       ])),
     ])));
+}
+
+class PremiumAccountsPage extends StatelessWidget {
+  const PremiumAccountsPage({super.key, required this.store});
+  final core.StudioStore store;
+
+  @override Widget build(BuildContext context) {
+    final completed = store.orders.where((o) => o.status == 'تم التسليم').toList();
+    final sales = completed.fold<double>(0, (v, o) => v + o.price);
+    final paid = completed.fold<double>(0, (v, o) => v + o.paid);
+    final costs = completed.fold<double>(0, (v, o) => v + o.totalCost);
+    final outstanding = completed.fold<double>(0, (v, o) => v + (o.outstanding > 0 ? o.outstanding : 0));
+    void showOrders(String title, List<core.Order> items) {
+      showDialog<void>(context: context, builder: (ctx) => Directionality(
+        textDirection: TextDirection.rtl,
+        child: AlertDialog(title: Text(title), content: SizedBox(width: 480,
+          child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+            if (items.isEmpty) const EmptyState('لا توجد طلبات ضمن هذا البند.'),
+            for (final order in items) Padding(padding: const EdgeInsets.only(bottom: 8),
+              child: core.OrderTile(order: order, store: store)),
+          ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))])));
+    }
+    final receivedOrders = completed.where((o) => o.paid > 0).toList();
+    final debtOrders = completed.where((o) => o.outstanding > 0).toList();
+    final cards = [
+      _FinanceItem('إجمالي المبيعات', sales, Icons.point_of_sale_rounded, completed),
+      _FinanceItem('المقبوض', paid, Icons.payments_outlined, receivedOrders),
+      _FinanceItem('المبالغ المتبقية', outstanding, Icons.hourglass_bottom_rounded, debtOrders),
+      _FinanceItem('التكاليف المباشرة', costs, Icons.precision_manufacturing_outlined, completed),
+      _FinanceItem('الربح المباشر', sales-costs, Icons.trending_up_rounded, completed),
+    ];
+    return ListView(padding: const EdgeInsets.fromLTRB(16, 22, 16, 90), children: [
+      const Text('مركز الحسابات', style: TextStyle(fontSize: 25, fontWeight: FontWeight.w900)),
+      const SizedBox(height: 5),
+      const Text('كل رقم قابل للفتح للوصول إلى الطلبات التي كوّنته.', style: TextStyle(color: muted, fontSize: 11)),
+      const SizedBox(height: 15),
+      for (final item in cards) Card(
+        margin: const EdgeInsets.only(bottom: 9),
+        child: InkWell(borderRadius: BorderRadius.circular(17),
+          onTap: () => showOrders(item.title, item.orders),
+          child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [
+            Container(width: 40, height: 40, decoration: BoxDecoration(
+              color: gold.withValues(alpha: .12), borderRadius: BorderRadius.circular(12)),
+              child: Icon(item.icon, color: gold, size: 19)),
+            const SizedBox(width: 11),
+            Expanded(child: Text(item.title, style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 12))),
+            Text(core.money(item.value), style: const TextStyle(color: gold, fontSize: 16, fontWeight: FontWeight.w900)),
+            const SizedBox(width: 5), const Icon(Icons.chevron_left_rounded, color: muted),
+          ])),
+        )),
+      const SizedBox(height: 8),
+      Text('الحسابات تحتسب الطلبات التي تم تسليمها فقط. الربح المعروض بعد المواد والتغليف والكهرباء، وقبل المصاريف العامة وأجرة وقت العمل. عدد الطلبات المحتسبة: ${completed.length}.',
+        style: const TextStyle(color: muted, fontSize: 10)),
+    ]);
+  }
+}
+
+class _FinanceItem {
+  const _FinanceItem(this.title, this.value, this.icon, this.orders);
+  final String title;
+  final double value;
+  final IconData icon;
+  final List<core.Order> orders;
 }
 
 class ReportsPage extends StatelessWidget {
