@@ -16,6 +16,68 @@ main{min-width:0;padding:25px clamp(14px,3vw,34px) 70px;max-width:1500px;width:1
 .login-wrap{min-height:100vh;display:grid;place-items:center;padding:18px}.login{width:min(430px,100%);padding:25px;background:var(--panel);border:1px solid var(--line);border-radius:18px;box-shadow:var(--shadow)}.login-logo{display:grid;justify-items:center;margin-bottom:12px}.login-logo img{width:140px;height:140px;object-fit:contain}.login h1{font-size:22px;margin:0 0 5px;text-align:center}.login p{text-align:center;font-size:13px;color:var(--muted);line-height:1.7}.login .field{margin:13px 0}.toast{position:fixed;bottom:18px;left:18px;z-index:90;background:var(--panel2);border:1px solid var(--gold);border-radius:11px;padding:12px 16px;box-shadow:var(--shadow);max-width:min(420px,90vw)}.hidden{display:none}
 @media(max-width:900px){#shell{display:block}.sidebar{position:sticky;z-index:5;top:0;height:auto;padding:8px 10px 7px;border-left:0;border-bottom:1px solid var(--line)}.brand{display:flex;align-items:center;justify-content:flex-start;gap:9px;margin:0 4px 7px}.brand img{width:55px;height:55px}.brand-caption{margin:0;text-align:right}.navs{display:flex;overflow-x:auto;gap:4px;white-space:nowrap}.nav{width:auto;flex:0 0 auto;padding:9px 11px;font-size:12px}.cards{grid-template-columns:repeat(2,minmax(0,1fr))}.grid2{grid-template-columns:1fr}main{padding:16px 12px 60px}.topbar h1{font-size:21px}.fields{grid-template-columns:1fr}.wide{grid-column:auto}.consume-row{grid-template-columns:1fr 100px auto}}
 @media(max-width:380px){.metric{font-size:20px}.card{padding:12px}.nav{padding:8px 9px}}
+
+/* LASER PRO — refined calm interface */
+:root{
+ --bg:#101114;--panel:#191b20;--panel2:#22252b;--text:#f3f3f1;--muted:#a7abb2;
+ --gold:#c6a96a;--line:#30343b;--radius:18px;--shadow:0 10px 28px rgba(0,0,0,.18)
+}
+body{background:radial-gradient(ellipse at 85% 0%,#24211a 0,transparent 34%),var(--bg);letter-spacing:.05px}
+.sidebar{background:#15171b;border-color:#292d33;padding:22px 15px}
+.brand{margin-bottom:22px}
+.brand img{filter:drop-shadow(0 5px 12px #0005)}
+.nav{padding:12px 14px;margin:4px 0;border-radius:12px;color:#d6d7da;transition:background .18s,border-color .18s}
+.nav:hover,.nav.active{background:linear-gradient(100deg,#292720,#202126);border-color:#5b4d31;color:#e0c58c}
+.nav .ico{color:#c6a96a}
+main{padding-top:30px}
+.topbar{padding:0 2px 16px;border-bottom:1px solid #292d33;margin-bottom:24px}
+.topbar h1{font-size:26px;font-weight:700;letter-spacing:-.3px}
+.pill{padding:6px 11px;background:#202329;border-color:#343941}
+.pill.gold{background:#2b271e;border-color:#655332;color:#e0c58c}
+.cards{gap:15px;margin-bottom:22px}
+.card,.item{background:linear-gradient(145deg,#1b1e23,#17191d);border:1px solid #30343b;border-radius:18px;box-shadow:0 7px 22px #0002}
+.card{padding:19px}
+.metric-label{font-size:13px;letter-spacing:.1px}
+.metric{font-size:27px;color:#dfc38a;font-weight:750}
+.section-head{margin:24px 0 14px}
+.section-head h2{font-size:18px;font-weight:700}
+.item{padding:17px}
+.item h3{font-size:15px;font-weight:700}
+.item p{line-height:1.85}
+button.primary{background:linear-gradient(135deg,#d6bd88,#b99552);color:#171512;border-radius:12px;padding:11px 18px;box-shadow:0 4px 12px #b9955220}
+button.primary:hover{filter:brightness(1.05)}
+button.secondary{background:#24272d;border-color:#3a3f47;border-radius:12px}
+button.danger{border-radius:12px}
+button.ghost{border-radius:10px}
+input,select,textarea{background:#202329;border-color:#383d45;border-radius:12px;padding:12px 13px;color:#f3f3f1}
+input:focus,select:focus,textarea:focus{border-color:#b99b5c;box-shadow:0 0 0 3px #c6a96a18}
+.field{font-size:12px;color:#c2c5ca}
+.field span{margin-bottom:8px;font-weight:600}
+.check{padding:10px 12px;background:#202329;border:1px solid #343941;border-radius:11px;font-size:13px}
+.hint{background:#28241b;border-color:#594a2d;color:#d9cba9;border-radius:12px;padding:13px 15px}
+#modal{backdrop-filter:blur(5px);background:#050608b8}
+.dialog{background:#191b20;border:1px solid #51452e;border-radius:20px;padding:22px;box-shadow:0 24px 80px #0009}
+.dialog-head{padding-bottom:13px;border-bottom:1px solid #30343b}
+.dialog-head h2{font-size:19px;font-weight:700}
+.dialog-actions{padding-top:12px;border-top:1px solid #30343b}
+.empty{background:#191b20;border-color:#3b3f46;border-radius:16px;padding:30px}
+.toolbar{gap:12px}
+.line-row{padding:10px 0;border-bottom:1px solid #2d3138}
+.toast{background:#202329;border-color:#a88c54;border-radius:13px}
+@media(max-width:900px){
+ .sidebar{background:#15171b;padding:9px 10px}
+ .brand{margin-bottom:8px}
+ .navs{padding-bottom:2px;scrollbar-width:thin}
+ .nav{border-radius:10px}
+ main{padding:18px 13px 65px}
+ .topbar{margin-bottom:18px}
+ .cards{gap:10px}
+ .card{padding:14px}
+ .metric{font-size:23px}
+ .dialog{padding:17px}
+}
+@media(max-width:380px){.metric{font-size:21px}}
+
 </style>
 </head>
 <body>
@@ -264,7 +326,7 @@ toast("تم إنشاء الطلب "+data.order_number);
 });
 const form=$("modalForm");
 const prod=form.querySelector('[name="product_type_id"]'),qty=form.querySelector('[name="quantity"]'),price=form.querySelector('[name="agreed_price"]');
-function fillProduct(){const p=products.find(x=>x.id===prod.value);if(!p)return;form.querySelector('[name="agreed_price"]').value=(n(p.sale_price)*Math.max(1,Math.floor(n(qty.value)||1))).toFixed(2);form.querySelector('[name="width_cm"]').value=p.default_width_cm||"";form.querySelector('[name="height_cm"]').value=p.default_height_cm||"";form.querySelector('[name="has_base"]').checked=!!p.has_base_default;form.querySelector('[name="has_background"]').checked=!!p.has_background_default;form.querySelector('[name="background_width_cm"]').value=p.default_width_cm||"";form.querySelector('[name="background_height_cm"]').value=p.default_height_cm||""}
+function fillProduct(){const p=products.find(x=>x.id===prod.value);if(!p)return;form.querySelector('[name="agreed_price"]').value=(n(p.sale_price)*Math.max(1,Math.floor(n(qty.value)||1))).toFixed(2);form.querySelector('[name="width_cm"]').value=p.default_width_cm||"";form.querySelector('[name="height_cm"]').value=p.default_height_cm||"";form.querySelector('[name="base_height_cm"]').value=p.base_height_cm||4;form.querySelector('[name="has_base"]').checked=!!p.has_base_default;form.querySelector('[name="has_background"]').checked=!!p.has_background_default;form.querySelector('[name="background_width_cm"]').value=p.default_width_cm||"";form.querySelector('[name="background_height_cm"]').value=p.default_height_cm||""}
 prod.onchange=fillProduct;qty.onchange=fillProduct;
 const w=form.querySelector('[name="width_cm"]'),h=form.querySelector('[name="height_cm"]'),bw=form.querySelector('[name="background_width_cm"]'),bh=form.querySelector('[name="background_height_cm"]'),bg=form.querySelector('[name="has_background"]');
 w.onchange=()=>{if(bg.checked)bw.value=w.value};h.onchange=()=>{if(bg.checked)bh.value=h.value};bg.onchange=()=>{if(bg.checked){bw.value=w.value;bh.value=h.value}};
