@@ -592,7 +592,8 @@ class OrderTile extends StatelessWidget {
         width: 450, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('رقم الطلب: ${order.orderNumber.isEmpty ? 'بانتظار المزامنة' : order.orderNumber}'),\n            Text('المنتج: ${order.product} · الكمية: ${order.quantity}'),
+            Text('رقم الطلب: ${order.orderNumber.isEmpty ? 'بانتظار المزامنة' : order.orderNumber}'),
+            Text('المنتج: ${order.product} · الكمية: ${order.quantity}'),
             if (order.phone.isNotEmpty) Text('الهاتف: ${order.phone}'),
             if (order.address.isNotEmpty) Text('العنوان: ${order.address}'),
             Text('تاريخ الطلب: ${date(order.orderDate)}'),
