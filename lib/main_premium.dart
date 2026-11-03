@@ -146,7 +146,7 @@ class _PremiumWorkspaceState extends State<PremiumWorkspace> {
           ])),
         ])),
         bottomNavigationBar: desktop ? null : NavigationBar(
-          selectedIndex: selected, onDestinationSelected: go,
+          selectedIndex: selected >= 3 ? 3 : selected, onDestinationSelected: go,
           destinations: const [
             NavigationDestination(icon: Icon(Icons.grid_view_rounded), label: 'الرئيسية'),
             NavigationDestination(icon: Icon(Icons.receipt_long_rounded), label: 'الطلبات'),
