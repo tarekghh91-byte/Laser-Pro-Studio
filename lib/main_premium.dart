@@ -917,9 +917,40 @@ class SuppliersPurchasesPage extends StatelessWidget {
         Expanded(child: _MiniStat(label: 'إجمالي المشتريات', value: core.money(all), icon: Icons.shopping_cart_outlined)),
       ]),
       const SizedBox(height: 9),
-      Card(child: ListTile(leading: const Icon(Icons.account_balance_outlined, color: gold),
+      Card(child: ListTile(
+        onTap: () => showDialog<void>(context: context, builder: (ctx) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(title: const Text('كشف حساب المورّدين'),
+            content: SizedBox(width: 460, child: SingleChildScrollView(child: Column(
+              mainAxisSize: MainAxisSize.min, children: [
+                _FinanceLine('إجمالي المستحقات', core.money(payable), strong: true),
+                const Divider(),
+                if (purchases.where((p) => p.outstanding > 0).isEmpty)
+                  const EmptyState('لا توجد مبالغ مستحقة للمورّدين.'),
+                for (final supplier in suppliers) Builder(builder: (context) {
+                  final openInvoices = purchases.where((p) =>
+                    p.supplierId == supplier.id && p.outstanding > 0).toList();
+                  if (openInvoices.isEmpty) return const SizedBox.shrink();
+                  final balance = openInvoices.fold<double>(0, (v, p) => v + p.outstanding);
+                  return ExpansionTile(
+                    title: Text(supplier.name),
+                    subtitle: Text('${openInvoices.length} فاتورة غير مسدّدة'),
+                    trailing: Text(core.money(balance), style: const TextStyle(
+                      color: Colors.orangeAccent, fontWeight: FontWeight.w900)),
+                    children: [for (final invoice in openInvoices) ListTile(
+                      dense: true, title: Text(invoice.materialName),
+                      subtitle: Text('فاتورة ${invoice.invoiceNumber.isEmpty ? '—' : invoice.invoiceNumber} • ${invoice.purchaseDate.toLocal().toString().substring(0, 10)}'),
+                      trailing: Text(core.money(invoice.outstanding)),
+                    )],
+                  );
+                }),
+              ],
+            ))),
+            actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))],
+          ))),
+        leading: const Icon(Icons.account_balance_outlined, color: gold),
         title: const Text('مستحقات المورّدين'),
-        subtitle: const Text('المبالغ التي لم تُسدّد بعد'),
+        subtitle: const Text('اضغط لعرض الفواتير غير المسدّدة حسب كل مورّد'),
         trailing: Text(core.money(payable), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)))),
       const SizedBox(height: 15),
       Row(children: [
