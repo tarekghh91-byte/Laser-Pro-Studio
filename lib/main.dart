@@ -215,22 +215,44 @@ class Supplier {
     createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''));
 }
 
+class SupplierPaymentEntry {
+  SupplierPaymentEntry({required this.id, required this.amount, required this.method,
+    DateTime? paidAt, this.notes = ''}) : paidAt = paidAt ?? DateTime.now();
+  final String id;
+  final double amount;
+  final String method, notes;
+  final DateTime paidAt;
+  Map<String, dynamic> toJson() => {'id': id, 'amount': amount, 'method': method,
+    'paidAt': paidAt.toIso8601String(), 'notes': notes};
+  factory SupplierPaymentEntry.fromJson(Map<String, dynamic> j) => SupplierPaymentEntry(
+    id: j['id'] as String, amount: (j['amount'] as num? ?? 0).toDouble(),
+    method: j['method'] as String? ?? 'غير محددة',
+    paidAt: DateTime.tryParse(j['paidAt'] as String? ?? ''),
+    notes: j['notes'] as String? ?? '');
+}
+
 class StockPurchase {
   StockPurchase({required this.id, required this.supplierId, required this.supplierName,
     required this.materialId, required this.materialName, required this.packageCount,
     required this.packUnits, required this.baseQuantity, required this.packageCost,
     required this.unitCost, required this.totalAmount, required this.paymentMethod,
-    required this.invoiceNumber, required this.purchaseDate, this.notes = ''});
+    this.paidAmount = 0, List<SupplierPaymentEntry>? payments,
+    required this.invoiceNumber, required this.purchaseDate, this.notes = ''}) : payments = payments ?? [];
   final String id;
   final String supplierId, supplierName, materialId, materialName;
   final double packageCount, packUnits, baseQuantity, packageCost, unitCost, totalAmount;
-  final String paymentMethod, invoiceNumber, notes;
+  String paymentMethod;
+  double paidAmount;
+  final String invoiceNumber, notes;
   final DateTime purchaseDate;
+  final List<SupplierPaymentEntry> payments;
+  double get outstanding => (totalAmount - paidAmount).clamp(0, double.infinity).toDouble();
   Map<String, dynamic> toJson() => {'id': id, 'supplierId': supplierId,
     'supplierName': supplierName, 'materialId': materialId, 'materialName': materialName,
     'packageCount': packageCount, 'packUnits': packUnits, 'baseQuantity': baseQuantity,
     'packageCost': packageCost, 'unitCost': unitCost, 'totalAmount': totalAmount,
-    'paymentMethod': paymentMethod, 'invoiceNumber': invoiceNumber,
+    'paymentMethod': paymentMethod, 'paidAmount': paidAmount,
+    'payments': payments.map((e) => e.toJson()).toList(), 'invoiceNumber': invoiceNumber,
     'purchaseDate': purchaseDate.toIso8601String(), 'notes': notes};
   factory StockPurchase.fromJson(Map<String, dynamic> j) => StockPurchase(
     id: j['id'] as String, supplierId: j['supplierId'] as String? ?? '',
@@ -243,6 +265,8 @@ class StockPurchase {
     unitCost: (j['unitCost'] as num? ?? 0).toDouble(),
     totalAmount: (j['totalAmount'] as num? ?? 0).toDouble(),
     paymentMethod: j['paymentMethod'] as String? ?? 'نقداً',
+    paidAmount: (j['paidAmount'] as num? ?? 0).toDouble(),
+    payments: (j['payments'] as List<dynamic>? ?? []).map((e) => SupplierPaymentEntry.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
     invoiceNumber: j['invoiceNumber'] as String? ?? '',
     purchaseDate: DateTime.tryParse(j['purchaseDate'] as String? ?? '') ?? DateTime.now(),
     notes: j['notes'] as String? ?? '');
@@ -532,7 +556,30 @@ class StudioStore extends ChangeNotifier {
   Future<void> updateSupplier(Supplier s) async {
     _pendingSuppliers.add(s.id); await _saveLocal(); _notify(); unawaited(syncNow());
   }
+  Future<void> addSupplierPayment(StockPurchase purchase, SupplierPaymentEntry payment) async {
+    if (payment.amount <= 0 || payment.amount > purchase.outstanding + 0.000001) {
+      throw ArgumentError('قيمة الدفعة تتجاوز مستحقات الفاتورة أو غير صالحة');
+    }
+    final oldPaid = purchase.paidAmount;
+    final oldMethod = purchase.paymentMethod;
+    purchase.payments.add(payment);
+    purchase.paidAmount += payment.amount;
+    purchase.paymentMethod = payment.method;
+    _pendingPurchases.add(purchase.id);
+    try {
+      await _saveLocal(); _notify(); unawaited(syncNow());
+    } catch (_) {
+      purchase.payments.removeWhere((x) => x.id == payment.id);
+      purchase.paidAmount = oldPaid;
+      purchase.paymentMethod = oldMethod;
+      rethrow;
+    }
+  }
+
   Future<void> recordPurchase(StockPurchase p) async {
+    if (p.paidAmount < 0 || p.paidAmount > p.totalAmount + 0.000001) {
+      throw ArgumentError('المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة');
+    }
     final found = materials.where((m) => m.id == p.materialId);
     if (found.isEmpty) throw StateError('المادة غير موجودة بالمخزون');
     if (p.packageCount <= 0 || p.packUnits <= 0 || p.packageCost < 0 ||
