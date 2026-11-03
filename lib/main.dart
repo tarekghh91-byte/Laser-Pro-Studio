@@ -88,7 +88,7 @@ class Order {
   double get totalCost => materialCost + electricCost;
   double get grossMargin => price - totalCost;
   Map<String, dynamic> toJson() => {
-    'id': id, 'orderNumber': orderNumber, 'handoffMethod': handoffMethod, 'paymentMethod': paymentMethod, 'customer': customer, product: product,
+    'id': id, 'orderNumber': orderNumber, 'handoffMethod': handoffMethod, 'paymentMethod': paymentMethod, 'customer': customer, 'product': product,
     'dueDate': dueDate.toIso8601String(), 'price': price, 'paid': paid,
     'materialCost': materialCost, 'status': status,
     'createdAt': createdAt.toIso8601String(), 'notes': notes,
