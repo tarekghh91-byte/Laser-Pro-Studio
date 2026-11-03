@@ -52,14 +52,64 @@ class UsedMaterial {
   );
 }
 
+String _stableCustomerId(String key) {
+  var hash = 0xcbf29ce484222325;
+  for (final unit in key.codeUnits) {
+    hash ^= unit;
+    hash = (hash * 0x100000001b3) & 0x7fffffffffffffff;
+  }
+  return 'cust_${hash.toRadixString(16)}';
+}
+
+class Customer {
+  Customer({required this.id, required this.name, this.phone = '', this.address = '',
+    DateTime? createdAt, this.archived = false}) : createdAt = createdAt ?? DateTime.now();
+  final String id;
+  String name, phone, address;
+  DateTime createdAt;
+  bool archived;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'phone': phone,
+    'address': address, 'createdAt': createdAt.toIso8601String(), 'archived': archived};
+  factory Customer.fromJson(Map<String, dynamic> j) => Customer(
+    id: j['id'] as String, name: j['name'] as String? ?? '',
+    phone: j['phone'] as String? ?? '', address: j['address'] as String? ?? '',
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
+    archived: j['archived'] as bool? ?? false);
+}
+
+class PaymentEntry {
+  PaymentEntry({required this.id, required this.amount, required this.method,
+    DateTime? receivedAt, this.notes = ''}) : receivedAt = receivedAt ?? DateTime.now();
+  final String id;
+  final double amount;
+  final String method;
+  final DateTime receivedAt;
+  final String notes;
+  Map<String, dynamic> toJson() => {'id': id, 'amount': amount, 'method': method,
+    'receivedAt': receivedAt.toIso8601String(), 'notes': notes};
+  factory PaymentEntry.fromJson(Map<String, dynamic> j) => PaymentEntry(
+    id: j['id'] as String, amount: (j['amount'] as num).toDouble(),
+    method: j['method'] as String? ?? 'غير محددة',
+    receivedAt: DateTime.tryParse(j['receivedAt'] as String? ?? ''),
+    notes: j['notes'] as String? ?? '');
+}
+
 class Order {
   Order({required this.id, required this.customer, required this.product,
     required this.dueDate, required this.price, required this.paid,
     required this.materialCost, required this.status, required this.createdAt,
-    this.notes = '', List<UsedMaterial>? usedMaterials,
+    this.notes = '', this.phone = '', this.address = '', this.quantity = 1,
+    this.orderNumber = '', this.handoffMethod = '', this.paymentMethod = '',
+    this.customerId = '', DateTime? orderDate, DateTime? deliveredAt, List<UsedMaterial>? usedMaterials,
+    List<PaymentEntry>? payments,
     this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
-      : usedMaterials = usedMaterials ?? [];
+      : orderDate = orderDate ?? createdAt, deliveredAt = deliveredAt,
+        usedMaterials = usedMaterials ?? [], payments = payments ?? [];
   final String id;
+  String orderNumber;
+  String handoffMethod;
+  String paymentMethod;
+  String customerId;
   String customer;
   String product;
   DateTime dueDate;
@@ -69,7 +119,13 @@ class Order {
   String status;
   DateTime createdAt;
   String notes;
+  String phone;
+  String address;
+  int quantity;
+  DateTime orderDate;
+  DateTime? deliveredAt;
   List<UsedMaterial> usedMaterials;
+  List<PaymentEntry> payments;
   double laserMinutes;
   double electricCost;
   bool inventoryDeducted;
@@ -77,16 +133,21 @@ class Order {
   double get totalCost => materialCost + electricCost;
   double get grossMargin => price - totalCost;
   Map<String, dynamic> toJson() => {
-    'id': id, 'customer': customer, 'product': product,
+    'id': id, 'orderNumber': orderNumber, 'handoffMethod': handoffMethod, 'paymentMethod': paymentMethod, 'customerId': customerId, 'customer': customer, 'product': product,
     'dueDate': dueDate.toIso8601String(), 'price': price, 'paid': paid,
     'materialCost': materialCost, 'status': status,
     'createdAt': createdAt.toIso8601String(), 'notes': notes,
+    'phone': phone, 'address': address, 'quantity': quantity,
+    'orderDate': orderDate.toIso8601String(),
+    'deliveredAt': deliveredAt?.toIso8601String(),
     'usedMaterials': usedMaterials.map((e) => e.toJson()).toList(),
+    'payments': payments.map((e) => e.toJson()).toList(),
     'laserMinutes': laserMinutes, 'electricCost': electricCost,
     'inventoryDeducted': inventoryDeducted,
   };
   factory Order.fromJson(Map<String, dynamic> j) => Order(
-    id: j['id'] as String, customer: j['customer'] as String,
+    id: j['id'] as String, orderNumber: j['orderNumber'] as String? ?? '',
+    handoffMethod: j['handoffMethod'] as String? ?? '', paymentMethod: j['paymentMethod'] as String? ?? '', customerId: j['customerId'] as String? ?? '', customer: j['customer'] as String,
     product: j['product'] as String,
     dueDate: DateTime.parse(j['dueDate'] as String),
     price: (j['price'] as num).toDouble(),
@@ -95,8 +156,14 @@ class Order {
     status: j['status'] as String,
     createdAt: DateTime.parse(j['createdAt'] as String),
     notes: j['notes'] as String? ?? '',
+    phone: j['phone'] as String? ?? '', address: j['address'] as String? ?? '',
+    quantity: (j['quantity'] as num? ?? 1).toInt(),
+    orderDate: DateTime.tryParse(j['orderDate'] as String? ?? '') ?? DateTime.parse(j['createdAt'] as String),
+    deliveredAt: DateTime.tryParse(j['deliveredAt'] as String? ?? ''),
     usedMaterials: (j['usedMaterials'] as List<dynamic>? ?? [])
       .map((e) => UsedMaterial.fromJson(e as Map<String, dynamic>)).toList(),
+    payments: (j['payments'] as List<dynamic>? ?? [])
+      .map((e) => PaymentEntry.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
     laserMinutes: (j['laserMinutes'] as num? ?? 0).toDouble(),
     electricCost: (j['electricCost'] as num? ?? 0).toDouble(),
     inventoryDeducted: j['inventoryDeducted'] as bool? ?? false,
@@ -130,15 +197,147 @@ class Material {
   );
 }
 
+class Supplier {
+  Supplier({required this.id, required this.name, this.phone = '', this.address = '',
+    this.notes = '', this.active = true, DateTime? createdAt})
+      : createdAt = createdAt ?? DateTime.now();
+  final String id;
+  String name, phone, address, notes;
+  bool active;
+  DateTime createdAt;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'phone': phone,
+    'address': address, 'notes': notes, 'active': active,
+    'createdAt': createdAt.toIso8601String()};
+  factory Supplier.fromJson(Map<String, dynamic> j) => Supplier(
+    id: j['id'] as String, name: j['name'] as String? ?? '',
+    phone: j['phone'] as String? ?? '', address: j['address'] as String? ?? '',
+    notes: j['notes'] as String? ?? '', active: j['active'] as bool? ?? true,
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''));
+}
+
+class SupplierPaymentEntry {
+  SupplierPaymentEntry({required this.id, required this.amount, required this.method,
+    DateTime? paidAt, this.notes = ''}) : paidAt = paidAt ?? DateTime.now();
+  final String id;
+  final double amount;
+  final String method, notes;
+  final DateTime paidAt;
+  Map<String, dynamic> toJson() => {'id': id, 'amount': amount, 'method': method,
+    'paidAt': paidAt.toIso8601String(), 'notes': notes};
+  factory SupplierPaymentEntry.fromJson(Map<String, dynamic> j) => SupplierPaymentEntry(
+    id: j['id'] as String, amount: (j['amount'] as num? ?? 0).toDouble(),
+    method: j['method'] as String? ?? 'غير محددة',
+    paidAt: DateTime.tryParse(j['paidAt'] as String? ?? ''),
+    notes: j['notes'] as String? ?? '');
+}
+
+class StockPurchase {
+  StockPurchase({required this.id, required this.supplierId, required this.supplierName,
+    required this.materialId, required this.materialName, required this.packageCount,
+    required this.packUnits, required this.baseQuantity, required this.packageCost,
+    required this.unitCost, required this.totalAmount, required this.paymentMethod,
+    this.paidAmount = 0, List<SupplierPaymentEntry>? payments,
+    required this.invoiceNumber, required this.purchaseDate, this.notes = ''}) : payments = payments ?? [];
+  final String id;
+  final String supplierId, supplierName, materialId, materialName;
+  final double packageCount, packUnits, baseQuantity, packageCost, unitCost, totalAmount;
+  String paymentMethod;
+  double paidAmount;
+  final String invoiceNumber, notes;
+  final DateTime purchaseDate;
+  final List<SupplierPaymentEntry> payments;
+  double get outstanding => (totalAmount - paidAmount).clamp(0, double.infinity).toDouble();
+  Map<String, dynamic> toJson() => {'id': id, 'supplierId': supplierId,
+    'supplierName': supplierName, 'materialId': materialId, 'materialName': materialName,
+    'packageCount': packageCount, 'packUnits': packUnits, 'baseQuantity': baseQuantity,
+    'packageCost': packageCost, 'unitCost': unitCost, 'totalAmount': totalAmount,
+    'paymentMethod': paymentMethod, 'paidAmount': paidAmount,
+    'payments': payments.map((e) => e.toJson()).toList(), 'invoiceNumber': invoiceNumber,
+    'purchaseDate': purchaseDate.toIso8601String(), 'notes': notes};
+  factory StockPurchase.fromJson(Map<String, dynamic> j) => StockPurchase(
+    id: j['id'] as String, supplierId: j['supplierId'] as String? ?? '',
+    supplierName: j['supplierName'] as String? ?? '',
+    materialId: j['materialId'] as String, materialName: j['materialName'] as String? ?? '',
+    packageCount: (j['packageCount'] as num? ?? 0).toDouble(),
+    packUnits: (j['packUnits'] as num? ?? 1).toDouble(),
+    baseQuantity: (j['baseQuantity'] as num? ?? 0).toDouble(),
+    packageCost: (j['packageCost'] as num? ?? 0).toDouble(),
+    unitCost: (j['unitCost'] as num? ?? 0).toDouble(),
+    totalAmount: (j['totalAmount'] as num? ?? 0).toDouble(),
+    paymentMethod: j['paymentMethod'] as String? ?? 'نقداً',
+    paidAmount: (j['paidAmount'] as num? ?? 0).toDouble(),
+    payments: (j['payments'] as List<dynamic>? ?? []).map((e) => SupplierPaymentEntry.fromJson(Map<String, dynamic>.from(e as Map))).toList(),
+    invoiceNumber: j['invoiceNumber'] as String? ?? '',
+    purchaseDate: DateTime.tryParse(j['purchaseDate'] as String? ?? '') ?? DateTime.now(),
+    notes: j['notes'] as String? ?? '');
+}
+
+class StudioProduct {
+  StudioProduct({required this.id, required this.name, this.category = 'مجسمات',
+    this.size = '', this.description = '', required this.salePrice,
+    this.active = true, DateTime? createdAt}) : createdAt = createdAt ?? DateTime.now();
+  final String id;
+  String name, category, size, description;
+  double salePrice;
+  bool active;
+  DateTime createdAt;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'category': category,
+    'size': size, 'description': description, 'salePrice': salePrice,
+    'active': active, 'createdAt': createdAt.toIso8601String()};
+  factory StudioProduct.fromJson(Map<String, dynamic> j) => StudioProduct(
+    id: j['id'] as String, name: j['name'] as String? ?? '',
+    category: j['category'] as String? ?? 'مجسمات', size: j['size'] as String? ?? '',
+    description: j['description'] as String? ?? '',
+    salePrice: (j['salePrice'] as num? ?? 0).toDouble(),
+    active: j['active'] as bool? ?? true,
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''));
+}
+
+class BusinessExpense {
+  BusinessExpense({required this.id, required this.title, required this.category,
+    required this.amount, required this.paymentMethod, DateTime? expenseDate,
+    this.notes = ''}) : expenseDate = expenseDate ?? DateTime.now();
+  final String id;
+  String title, category, paymentMethod, notes;
+  double amount;
+  DateTime expenseDate;
+  Map<String, dynamic> toJson() => {'id': id, 'title': title, 'category': category,
+    'amount': amount, 'paymentMethod': paymentMethod,
+    'expenseDate': expenseDate.toIso8601String(), 'notes': notes};
+  factory BusinessExpense.fromJson(Map<String, dynamic> j) => BusinessExpense(
+    id: j['id'] as String, title: j['title'] as String? ?? '',
+    category: j['category'] as String? ?? 'أخرى',
+    amount: (j['amount'] as num? ?? 0).toDouble(),
+    paymentMethod: j['paymentMethod'] as String? ?? 'نقداً',
+    expenseDate: DateTime.tryParse(j['expenseDate'] as String? ?? ''),
+    notes: j['notes'] as String? ?? '');
+}
+
 class StudioStore extends ChangeNotifier {
   StudioStore({required this.ownerId}) : _cloud = CloudSync(ownerId);
   final String ownerId;
   final CloudSync _cloud;
   final List<Order> orders = [];
   final List<Material> materials = [];
+  final List<Customer> customers = [];
+  final List<StudioProduct> products = [];
+  final List<BusinessExpense> expenses = [];
+  final List<Supplier> suppliers = [];
+  final List<StockPurchase> purchases = [];
   final Set<String> _pendingOrders = {};
+  final Set<String> _pendingCustomers = {};
+  final Set<String> _deletedCustomers = {};
+  final Set<String> _pendingProducts = {}, _deletedProducts = {};
+  final Set<String> _pendingExpenses = {}, _deletedExpenses = {};
+  final Set<String> _pendingSuppliers = {}, _deletedSuppliers = {};
+  final Set<String> _pendingPurchases = {}, _deletedPurchases = {};
   final Set<String> _pendingMaterials = {};
+  final Set<String> _deletedOrders = {};
+  final Set<String> _deletedMaterials = {};
   final Map<String, int> _orderVersions = {};
+  final Map<String, int> _customerVersions = {};
+  final Map<String, int> _productVersions = {}, _expenseVersions = {};
+  final Map<String, int> _supplierVersions = {}, _purchaseVersions = {};
   final Map<String, int> _materialVersions = {};
   Timer? _syncTimer;
   bool loading = true;
@@ -149,7 +348,14 @@ class StudioStore extends ChangeNotifier {
   File? _file;
   Future<void> _writeChain = Future<void>.value();
 
-  bool get hasPendingWrites => _pendingOrders.isNotEmpty || _pendingMaterials.isNotEmpty;
+  bool get hasPendingWrites =>
+    _pendingOrders.isNotEmpty || _pendingMaterials.isNotEmpty ||
+    _pendingCustomers.isNotEmpty || _deletedCustomers.isNotEmpty ||
+    _deletedOrders.isNotEmpty || _deletedMaterials.isNotEmpty ||
+    _pendingProducts.isNotEmpty || _deletedProducts.isNotEmpty ||
+    _pendingExpenses.isNotEmpty || _deletedExpenses.isNotEmpty ||
+    _pendingSuppliers.isNotEmpty || _deletedSuppliers.isNotEmpty ||
+    _pendingPurchases.isNotEmpty || _deletedPurchases.isNotEmpty;
   void _notify() { if (!_disposed) notifyListeners(); }
 
   Future<void> load() async {
@@ -163,8 +369,45 @@ class StudioStore extends ChangeNotifier {
           (e) => Order.fromJson(Map<String, dynamic>.from(e as Map))));
         materials.addAll((raw['materials'] as List<dynamic>? ?? []).map(
           (e) => Material.fromJson(Map<String, dynamic>.from(e as Map))));
+        customers.addAll((raw['customers'] as List<dynamic>? ?? []).map(
+          (e) => Customer.fromJson(Map<String, dynamic>.from(e as Map))));
+        products.addAll((raw['products'] as List<dynamic>? ?? []).map(
+          (e) => StudioProduct.fromJson(Map<String, dynamic>.from(e as Map))));
+        expenses.addAll((raw['expenses'] as List<dynamic>? ?? []).map(
+          (e) => BusinessExpense.fromJson(Map<String, dynamic>.from(e as Map))));
+        suppliers.addAll((raw['suppliers'] as List<dynamic>? ?? []).map(
+          (e) => Supplier.fromJson(Map<String, dynamic>.from(e as Map))));
+        purchases.addAll((raw['purchases'] as List<dynamic>? ?? []).map(
+          (e) => StockPurchase.fromJson(Map<String, dynamic>.from(e as Map))));
+        _pendingSuppliers.addAll(List<String>.from(raw['pendingSuppliers'] as List? ?? []));
+        _deletedSuppliers.addAll(List<String>.from(raw['deletedSuppliers'] as List? ?? []));
+        _pendingPurchases.addAll(List<String>.from(raw['pendingPurchases'] as List? ?? []));
+        _deletedPurchases.addAll(List<String>.from(raw['deletedPurchases'] as List? ?? []));
+        for (final e in (raw['supplierVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _supplierVersions[e.key] = (e.value as num).toInt();
+        }
+        for (final e in (raw['purchaseVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _purchaseVersions[e.key] = (e.value as num).toInt();
+        }
+        _pendingProducts.addAll(List<String>.from(raw['pendingProducts'] as List? ?? []));
+        _deletedProducts.addAll(List<String>.from(raw['deletedProducts'] as List? ?? []));
+        _pendingExpenses.addAll(List<String>.from(raw['pendingExpenses'] as List? ?? []));
+        _deletedExpenses.addAll(List<String>.from(raw['deletedExpenses'] as List? ?? []));
+        for (final e in (raw['productVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _productVersions[e.key] = (e.value as num).toInt();
+        }
+        for (final e in (raw['expenseVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _expenseVersions[e.key] = (e.value as num).toInt();
+        }
+        _pendingCustomers.addAll(List<String>.from(raw['pendingCustomers'] as List? ?? []));
+        _deletedCustomers.addAll(List<String>.from(raw['deletedCustomers'] as List? ?? []));
+        for (final entry in (raw['customerVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _customerVersions[entry.key] = (entry.value as num).toInt();
+        }
         _pendingOrders.addAll(List<String>.from(raw['pendingOrders'] as List? ?? []));
         _pendingMaterials.addAll(List<String>.from(raw['pendingMaterials'] as List? ?? []));
+        _deletedOrders.addAll(List<String>.from(raw['deletedOrders'] as List? ?? []));
+        _deletedMaterials.addAll(List<String>.from(raw['deletedMaterials'] as List? ?? []));
         for (final entry in (raw['orderVersions'] as Map<String, dynamic>? ?? {}).entries) {
           _orderVersions[entry.key] = (entry.value as num).toInt();
         }
@@ -186,11 +429,27 @@ class StudioStore extends ChangeNotifier {
 
   Future<void> _saveLocal() {
     final content = jsonEncode({
-      'schemaVersion': 3,
+      'schemaVersion': 5,
       'orders': orders.map((e) => e.toJson()).toList(),
       'materials': materials.map((e) => e.toJson()).toList(),
+      'customers': customers.map((e) => e.toJson()).toList(),
+      'products': products.map((e) => e.toJson()).toList(),
+      'expenses': expenses.map((e) => e.toJson()).toList(),
+      'suppliers': suppliers.map((e) => e.toJson()).toList(),
+      'purchases': purchases.map((e) => e.toJson()).toList(),
+      'pendingSuppliers': _pendingSuppliers.toList(), 'deletedSuppliers': _deletedSuppliers.toList(),
+      'pendingPurchases': _pendingPurchases.toList(), 'deletedPurchases': _deletedPurchases.toList(),
+      'supplierVersions': _supplierVersions, 'purchaseVersions': _purchaseVersions,
+      'pendingProducts': _pendingProducts.toList(), 'deletedProducts': _deletedProducts.toList(),
+      'pendingExpenses': _pendingExpenses.toList(), 'deletedExpenses': _deletedExpenses.toList(),
+      'productVersions': _productVersions, 'expenseVersions': _expenseVersions,
+      'pendingCustomers': _pendingCustomers.toList(),
+      'deletedCustomers': _deletedCustomers.toList(),
+      'customerVersions': _customerVersions,
       'pendingOrders': _pendingOrders.toList(),
       'pendingMaterials': _pendingMaterials.toList(),
+      'deletedOrders': _deletedOrders.toList(),
+      'deletedMaterials': _deletedMaterials.toList(),
       'orderVersions': _orderVersions,
       'materialVersions': _materialVersions,
     });
@@ -217,10 +476,193 @@ class StudioStore extends ChangeNotifier {
     unawaited(syncNow());
   }
 
-  Future<void> addOrder(Order o) async { orders.add(o); await _save(orderId: o.id); }
-  Future<void> updateOrder(Order o) async => _save(orderId: o.id);
+  String _customerKey(String name, String phone) {
+    final normalizedPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    return normalizedPhone.isNotEmpty ? 'phone:$normalizedPhone' : 'name:${name.trim().toLowerCase()}';
+  }
+
+  Customer _ensureCustomer(Order order) {
+    final normalizedPhone = order.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    final normalizedName = order.customer.trim().toLowerCase();
+    if (order.customerId.isNotEmpty) {
+      final linked = customers.where((c) => c.id == order.customerId);
+      if (linked.isNotEmpty) {
+        final linkedPhone = linked.first.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+        final linkedName = linked.first.name.trim().toLowerCase();
+        if ((normalizedPhone.isNotEmpty && normalizedPhone == linkedPhone) ||
+            normalizedName == linkedName) return linked.first;
+      }
+    }
+    final match = customers.where((c) {
+      final phone = c.phone.replaceAll(RegExp(r'[^0-9+]'), '');
+      if (normalizedPhone.isNotEmpty && phone.isNotEmpty) return phone == normalizedPhone;
+      return c.name.trim().toLowerCase() == normalizedName;
+    });
+    final key = _customerKey(order.customer, order.phone);
+    final id = match.isNotEmpty ? match.first.id : _stableCustomerId(key);
+    final customer = match.isNotEmpty ? match.first : Customer(
+      id: id, name: order.customer, phone: order.phone, address: order.address);
+    if (match.isEmpty) { customers.add(customer); _pendingCustomers.add(id); }
+    order.customerId = id;
+    return customer;
+  }
+
+  Future<void> addCustomer(Customer customer) async {
+    customers.add(customer); _pendingCustomers.add(customer.id);
+    await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> addPayment(Order order, PaymentEntry payment) async {
+    if (payment.amount <= 0 || payment.amount > order.outstanding + 0.000001) {
+      throw ArgumentError('قيمة الدفعة تتجاوز المبلغ المتبقي أو غير صالحة');
+    }
+    order.payments.add(payment);
+    order.paid += payment.amount;
+    order.paymentMethod = payment.method;
+    await _save(orderId: order.id);
+  }
+
+  Future<void> updateCustomer(Customer customer) async {
+    _pendingCustomers.add(customer.id);
+    await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> archiveCustomer(Customer customer) async {
+    customer.archived = true;
+    await updateCustomer(customer);
+  }
+  Future<void> deleteCustomer(Customer customer) async {
+    if (orders.any((o) => o.customerId == customer.id)) {
+      await archiveCustomer(customer);
+      return;
+    }
+    customers.removeWhere((c) => c.id == customer.id);
+    _pendingCustomers.remove(customer.id); _deletedCustomers.add(customer.id);
+    await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+
+  Future<void> addOrder(Order o) async {
+    _ensureCustomer(o); orders.add(o);
+    await _save(orderId: o.id);
+    if (o.customerId.isNotEmpty) { _pendingCustomers.add(o.customerId); await _saveLocal(); unawaited(syncNow()); }
+  }
+  Future<void> updateOrder(Order o) async {
+    _ensureCustomer(o); await _save(orderId: o.id);
+    if (o.customerId.isNotEmpty) { _pendingCustomers.add(o.customerId); await _saveLocal(); unawaited(syncNow()); }
+  }
   Future<void> addMaterial(Material m) async { materials.add(m); await _save(materialId: m.id); }
+
+  Future<void> addSupplier(Supplier s) async {
+    suppliers.add(s); _pendingSuppliers.add(s.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> updateSupplier(Supplier s) async {
+    _pendingSuppliers.add(s.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> addSupplierPayment(StockPurchase purchase, SupplierPaymentEntry payment) async {
+    if (!payment.amount.isFinite || payment.amount <= 0 ||
+        payment.amount > purchase.outstanding + 0.000001) {
+      throw ArgumentError('قيمة الدفعة يجب أن تكون رقماً صالحاً ضمن المستحقات');
+    }
+    final oldPaid = purchase.paidAmount;
+    final oldMethod = purchase.paymentMethod;
+    final wasPending = _pendingPurchases.contains(purchase.id);
+    purchase.payments.add(payment);
+    purchase.paidAmount += payment.amount;
+    purchase.paymentMethod = payment.method;
+    _pendingPurchases.add(purchase.id);
+    try {
+      await _saveLocal(); _notify(); unawaited(syncNow());
+    } catch (_) {
+      purchase.payments.removeWhere((x) => x.id == payment.id);
+      purchase.paidAmount = oldPaid;
+      purchase.paymentMethod = oldMethod;
+      if (!wasPending) _pendingPurchases.remove(purchase.id);
+      rethrow;
+    }
+  }
+
+  Future<void> recordPurchase(StockPurchase p) async {
+    if (p.paidAmount < 0 || p.paidAmount > p.totalAmount + 0.000001) {
+      throw ArgumentError('المبلغ المدفوع يجب أن يكون بين صفر وإجمالي الفاتورة');
+    }
+    final found = materials.where((m) => m.id == p.materialId);
+    if (found.isEmpty) throw StateError('المادة غير موجودة بالمخزون');
+    if (p.packageCount <= 0 || p.packUnits <= 0 || p.packageCost < 0 ||
+        !p.packageCount.isFinite || !p.packUnits.isFinite || !p.packageCost.isFinite) {
+      throw ArgumentError('راجع كمية الشراء وسعر العبوة');
+    }
+    final material = found.first;
+    final oldQuantity = material.quantity;
+    final oldUnitCost = material.unitCost;
+    final wasMaterialPending = _pendingMaterials.contains(material.id);
+    final oldValue = oldQuantity * oldUnitCost;
+    final newQty = p.baseQuantity;
+    final newValue = newQty * p.unitCost;
+    final combinedQty = oldQuantity + newQty;
+    material.quantity = combinedQty;
+    if (combinedQty > 0) material.unitCost = (oldValue + newValue) / combinedQty;
+    purchases.add(p);
+    _pendingMaterials.add(material.id); _pendingPurchases.add(p.id);
+    try {
+      await _saveLocal(); _notify(); unawaited(syncNow());
+    } catch (_) {
+      material.quantity = oldQuantity;
+      material.unitCost = oldUnitCost;
+      purchases.removeWhere((x) => x.id == p.id);
+      if (!wasMaterialPending) _pendingMaterials.remove(material.id);
+      _pendingPurchases.remove(p.id);
+      rethrow;
+    }
+  }
+
+  Future<void> addProduct(StudioProduct p) async {
+    products.add(p); _pendingProducts.add(p.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> updateProduct(StudioProduct p) async {
+    _pendingProducts.add(p.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> deleteProduct(StudioProduct p) async {
+    products.removeWhere((x) => x.id == p.id); _pendingProducts.remove(p.id);
+    _deletedProducts.add(p.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> addExpense(BusinessExpense e) async {
+    expenses.add(e); _pendingExpenses.add(e.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> updateExpense(BusinessExpense e) async {
+    _pendingExpenses.add(e.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> deleteExpense(BusinessExpense e) async {
+    expenses.removeWhere((x) => x.id == e.id); _pendingExpenses.remove(e.id);
+    _deletedExpenses.add(e.id); await _saveLocal(); _notify(); unawaited(syncNow());
+  }
   Future<void> updateMaterial(Material m) async => _save(materialId: m.id);
+
+  /// Soft-delete cloud records with tombstones so they do not reappear on another device.
+  Future<void> deleteOrder(Order order) async {
+    if (order.inventoryDeducted) {
+      for (final line in order.usedMaterials) {
+        final found = materials.where((m) => m.id == line.id);
+        if (found.isNotEmpty) found.first.quantity += line.amount;
+      }
+      order.inventoryDeducted = false;
+      for (final line in order.usedMaterials) {
+        if (materials.any((m) => m.id == line.id)) _pendingMaterials.add(line.id);
+      }
+    }
+    orders.removeWhere((o) => o.id == order.id);
+    _pendingOrders.remove(order.id);
+    _deletedOrders.add(order.id);
+    await _saveLocal();
+    _notify();
+    unawaited(syncNow());
+  }
+
+  Future<void> deleteMaterial(Material material) async {
+    materials.removeWhere((m) => m.id == material.id);
+    _pendingMaterials.remove(material.id);
+    _deletedMaterials.add(material.id);
+    await _saveLocal();
+    _notify();
+    unawaited(syncNow());
+  }
 
   /// Push locally edited records, then pull changes from the other device.
   /// Optimistic versions prevent the same item being silently overwritten.
@@ -231,6 +673,90 @@ class StudioStore extends ChangeNotifier {
     _notify();
     var conflict = false;
     try {
+      for (final id in _deletedSuppliers.toList()) {
+        final version = await _cloud.put('suppliers', id, {'id': id, '_deleted': true}, _supplierVersions[id] ?? 0);
+        _supplierVersions[id] = version; _deletedSuppliers.remove(id);
+      }
+      for (final id in _deletedPurchases.toList()) {
+        final version = await _cloud.put('purchases', id, {'id': id, '_deleted': true}, _purchaseVersions[id] ?? 0);
+        _purchaseVersions[id] = version; _deletedPurchases.remove(id);
+      }
+      for (final id in _deletedProducts.toList()) {
+        final version = await _cloud.put('products', id, {'id': id, '_deleted': true}, _productVersions[id] ?? 0);
+        _productVersions[id] = version; _deletedProducts.remove(id);
+      }
+      for (final id in _deletedExpenses.toList()) {
+        final version = await _cloud.put('expenses', id, {'id': id, '_deleted': true}, _expenseVersions[id] ?? 0);
+        _expenseVersions[id] = version; _deletedExpenses.remove(id);
+      }
+      for (final id in _deletedCustomers.toList()) {
+        final version = await _cloud.put('customers', id, {'id': id, '_deleted': true}, _customerVersions[id] ?? 0);
+        _customerVersions[id] = version;
+        _deletedCustomers.remove(id);
+      }
+      for (final id in _deletedMaterials.toList()) {
+        final version = await _cloud.put('materials', id, {'id': id, '_deleted': true}, _materialVersions[id] ?? 0);
+        _materialVersions[id] = version;
+        _deletedMaterials.remove(id);
+      }
+      for (final id in _deletedOrders.toList()) {
+        final version = await _cloud.put('orders', id, {'id': id, '_deleted': true}, _orderVersions[id] ?? 0);
+        _orderVersions[id] = version;
+        _deletedOrders.remove(id);
+      }
+      for (final id in _pendingSuppliers.toList()) {
+        final item = suppliers.where((s) => s.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('suppliers', id, item.first.toJson(), _supplierVersions[id] ?? 0);
+          _supplierVersions[id] = version; _pendingSuppliers.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
+      }
+      for (final id in _pendingPurchases.toList()) {
+        final item = purchases.where((p) => p.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('purchases', id, item.first.toJson(), _purchaseVersions[id] ?? 0);
+          _purchaseVersions[id] = version; _pendingPurchases.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
+      }
+      for (final id in _pendingProducts.toList()) {
+        final item = products.where((p) => p.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('products', id, item.first.toJson(), _productVersions[id] ?? 0);
+          _productVersions[id] = version; _pendingProducts.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
+      }
+      for (final id in _pendingExpenses.toList()) {
+        final item = expenses.where((p) => p.id == id);
+        if (item.isEmpty) continue;
+        try {
+          final version = await _cloud.put('expenses', id, item.first.toJson(), _expenseVersions[id] ?? 0);
+          _expenseVersions[id] = version; _pendingExpenses.remove(id);
+        } catch (e) { if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; } rethrow; }
+      }
+      for (final id in _pendingCustomers.toList()) {
+        final matches = customers.where((c) => c.id == id);
+        if (matches.isEmpty) continue;
+        final customer = matches.first;
+        try {
+          final version = await _cloud.put('customers', id, customer.toJson(), _customerVersions[id] ?? 0);
+          _customerVersions[id] = version;
+          _pendingCustomers.remove(id);
+        } catch (e) {
+          if (e.toString().contains('SYNC_CONFLICT')) {
+            if ((_customerVersions[id] ?? 0) == 0) {
+              // Two devices may create the same phone-based profile offline.
+              // Its deterministic ID means the remote record is the same customer.
+              _pendingCustomers.remove(id);
+              continue;
+            }
+            conflict = true; continue;
+          }
+          rethrow;
+        }
+      }
       for (final id in _pendingMaterials.toList()) {
         final matches = materials.where((m) => m.id == id);
         if (matches.isEmpty) continue;
@@ -249,8 +775,15 @@ class StudioStore extends ChangeNotifier {
         final matches = orders.where((o) => o.id == id);
         if (matches.isEmpty) continue;
         final order = matches.first;
-        final payload = order.toJson();
         try {
+          // Reserve the permanent serial centrally before uploading. Persist it
+          // locally first so a dropped response/retry cannot consume another number.
+          if (order.orderNumber.isEmpty) {
+            order.orderNumber = await _cloud.nextOrderNumber();
+            await _saveLocal();
+            _notify();
+          }
+          final payload = order.toJson();
           final version = await _cloud.put('orders', id, payload, _orderVersions[id] ?? 0);
           _orderVersions[id] = version;
           if (jsonEncode(order.toJson()) == jsonEncode(payload)) _pendingOrders.remove(id);
@@ -259,9 +792,59 @@ class StudioStore extends ChangeNotifier {
           rethrow;
         }
       }
+      final remoteSuppliers = await _cloud.list('suppliers');
+      for (final r in remoteSuppliers) {
+        if (r.payload['_deleted'] == true) { suppliers.removeWhere((s) => s.id == r.id); _pendingSuppliers.remove(r.id); _deletedSuppliers.remove(r.id); _supplierVersions[r.id] = r.version; continue; }
+        if (_pendingSuppliers.contains(r.id) || _deletedSuppliers.contains(r.id)) continue;
+        final idx = suppliers.indexWhere((s) => s.id == r.id);
+        final item = Supplier.fromJson(r.payload);
+        if (idx < 0) { suppliers.add(item); } else { suppliers[idx] = item; }
+        _supplierVersions[r.id] = r.version;
+      }
+      final remotePurchases = await _cloud.list('purchases');
+      for (final r in remotePurchases) {
+        if (r.payload['_deleted'] == true) { purchases.removeWhere((p) => p.id == r.id); _pendingPurchases.remove(r.id); _deletedPurchases.remove(r.id); _purchaseVersions[r.id] = r.version; continue; }
+        if (_pendingPurchases.contains(r.id) || _deletedPurchases.contains(r.id)) continue;
+        final idx = purchases.indexWhere((p) => p.id == r.id);
+        final item = StockPurchase.fromJson(r.payload);
+        if (idx < 0) { purchases.add(item); } else { purchases[idx] = item; }
+        _purchaseVersions[r.id] = r.version;
+      }
+      final remoteProducts = await _cloud.list('products');
+      for (final r in remoteProducts) {
+        if (r.payload['_deleted'] == true) { products.removeWhere((p) => p.id == r.id); _pendingProducts.remove(r.id); _deletedProducts.remove(r.id); _productVersions[r.id] = r.version; continue; }
+        if (_pendingProducts.contains(r.id) || _deletedProducts.contains(r.id)) continue;
+        final idx = products.indexWhere((p) => p.id == r.id);
+        final item = StudioProduct.fromJson(r.payload);
+        if (idx < 0) { products.add(item); } else { products[idx] = item; }
+        _productVersions[r.id] = r.version;
+      }
+      final remoteExpenses = await _cloud.list('expenses');
+      for (final r in remoteExpenses) {
+        if (r.payload['_deleted'] == true) { expenses.removeWhere((e) => e.id == r.id); _pendingExpenses.remove(r.id); _deletedExpenses.remove(r.id); _expenseVersions[r.id] = r.version; continue; }
+        if (_pendingExpenses.contains(r.id) || _deletedExpenses.contains(r.id)) continue;
+        final idx = expenses.indexWhere((e) => e.id == r.id);
+        final item = BusinessExpense.fromJson(r.payload);
+        if (idx < 0) { expenses.add(item); } else { expenses[idx] = item; }
+        _expenseVersions[r.id] = r.version;
+      }
+      final remoteCustomers = await _cloud.list('customers');
+      for (final r in remoteCustomers) {
+        if (r.payload['_deleted'] == true) {
+          customers.removeWhere((c) => c.id == r.id);
+          _pendingCustomers.remove(r.id); _deletedCustomers.remove(r.id);
+          _customerVersions[r.id] = r.version; continue;
+        }
+        if (_pendingCustomers.contains(r.id) || _deletedCustomers.contains(r.id)) continue;
+        final idx = customers.indexWhere((c) => c.id == r.id);
+        final item = Customer.fromJson(r.payload);
+        if (idx == -1) { customers.add(item); } else { customers[idx] = item; }
+        _customerVersions[r.id] = r.version;
+      }
       final remoteMaterials = await _cloud.list('materials');
       for (final r in remoteMaterials) {
-        if (_pendingMaterials.contains(r.id)) continue;
+        if (r.payload['_deleted'] == true) { materials.removeWhere((m) => m.id == r.id); _pendingMaterials.remove(r.id); _deletedMaterials.remove(r.id); _materialVersions[r.id] = r.version; continue; }
+        if (_pendingMaterials.contains(r.id) || _deletedMaterials.contains(r.id)) continue;
         final idx = materials.indexWhere((m) => m.id == r.id);
         final item = Material.fromJson(r.payload);
         if (idx == -1) { materials.add(item); } else { materials[idx] = item; }
@@ -269,11 +852,22 @@ class StudioStore extends ChangeNotifier {
       }
       final remoteOrders = await _cloud.list('orders');
       for (final r in remoteOrders) {
-        if (_pendingOrders.contains(r.id)) continue;
+        if (r.payload['_deleted'] == true) { orders.removeWhere((o) => o.id == r.id); _pendingOrders.remove(r.id); _deletedOrders.remove(r.id); _orderVersions[r.id] = r.version; continue; }
+        if (_pendingOrders.contains(r.id) || _deletedOrders.contains(r.id)) continue;
         final idx = orders.indexWhere((o) => o.id == r.id);
         final item = Order.fromJson(r.payload);
         if (idx == -1) { orders.add(item); } else { orders[idx] = item; }
         _orderVersions[r.id] = r.version;
+      }
+      // Link legacy orders that predate independent customer profiles.
+      for (final order in orders) {
+        if (order.customerId.isEmpty) {
+          _ensureCustomer(order);
+          _pendingOrders.add(order.id);
+        }
+      }
+      if (_pendingCustomers.isNotEmpty || _pendingOrders.isNotEmpty) {
+        // Persist links and profile records; the next sync cycle uploads them.
       }
       await _saveLocal();
       syncStatus = conflict ? 'تعارض تعديل: تأكّد من البيانات قبل المتابعة'
@@ -486,31 +1080,131 @@ class OrdersPage extends StatelessWidget {
   const OrdersPage({super.key, required this.store, required this.newOrder});
   final StudioStore store;
   final VoidCallback newOrder;
-  @override Widget build(BuildContext context) => content([
-    section('طلباتي (${store.orders.length})', store.orders.isEmpty
-      ? const Text('ما عندك طلبات بعد. اضغط "طلب جديد" للبدء.')
-      : Column(children: [...store.orders.reversed.map((o) => OrderTile(order: o, store: store))])),
-  ]);
+  @override Widget build(BuildContext context) {
+    final active = store.orders.where((o) => o.status == 'جديد' || o.status == 'قيد التنفيذ').toList()
+      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    final ready = store.orders.where((o) => o.status == 'جاهز').toList()
+      ..sort((a, b) => a.dueDate.compareTo(b.dueDate));
+    final delivered = store.orders.where((o) => o.status == 'تم التسليم').toList()
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    return content([
+      Row(children: [Expanded(child: Text('مركز الطلبات · ${store.orders.length}',
+        style: const TextStyle(fontSize: 23, fontWeight: FontWeight.bold))),
+        FilledButton.icon(onPressed: newOrder, icon: const Icon(Icons.add), label: const Text('طلب جديد'))]),
+      const SizedBox(height: 15),
+      section('قيد التحضير والتنفيذ · ${active.length}', active.isEmpty
+        ? const Text('لا توجد طلبات في هذه المرحلة.')
+        : Column(children: active.map((o) => OrderTile(order: o, store: store)).toList())),
+      const SizedBox(height: 16),
+      section('جاهزة بانتظار التسليم · ${ready.length}', ready.isEmpty
+        ? const Text('لا توجد طلبات جاهزة حالياً.')
+        : Column(children: ready.map((o) => OrderTile(order: o, store: store)).toList())),
+      const SizedBox(height: 16),
+      section('تم التسليم · ${delivered.length}', delivered.isEmpty
+        ? const Text('لا توجد طلبات مسلّمة بعد.')
+        : Column(children: delivered.map((o) => OrderTile(order: o, store: store)).toList())),
+    ]);
+  }
 }
+Future<PaymentEntry?> showPaymentDialog(BuildContext context, Order order) async {
+  final amount = TextEditingController(text: order.outstanding.toStringAsFixed(2));
+  final notes = TextEditingController();
+  var method = 'نقداً / باليد';
+  final result = await showDialog<PaymentEntry>(context: context,
+    builder: (ctx) => StatefulBuilder(builder: (ctx, refresh) => Directionality(
+      textDirection: TextDirection.rtl,
+      child: AlertDialog(title: const Text('تسجيل دفعة'),
+        content: SizedBox(width: 380, child: Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('المتبقي: ${money(order.outstanding)}',
+            style: const TextStyle(color: gold, fontWeight: FontWeight.bold)),
+          const SizedBox(height: 10),
+          TextField(controller: amount, keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            decoration: const InputDecoration(labelText: 'قيمة الدفعة')),
+          const SizedBox(height: 10),
+          DropdownButtonFormField<String>(value: method,
+            decoration: const InputDecoration(labelText: 'طريقة الدفع'),
+            items: ['نقداً / باليد', 'مع شخص', 'Whish Money']
+              .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+            onChanged: (v) { if (v != null) refresh(() => method = v); }),
+          const SizedBox(height: 10),
+          TextField(controller: notes, decoration: const InputDecoration(labelText: 'ملاحظة (اختياري)')),
+        ])),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(onPressed: () {
+            final value = double.tryParse(amount.text.trim().replaceAll(',', '.'));
+            if (value == null || value <= 0 || value > order.outstanding + 0.000001) return;
+            Navigator.pop(ctx, PaymentEntry(id: const Uuid().v4(), amount: value,
+              method: method, notes: notes.text.trim()));
+          }, child: const Text('حفظ الدفعة')),
+        ],
+      ))));
+  amount.dispose(); notes.dispose();
+  return result;
+}
+
+Future<Map<String, String>?> showHandoffDialog(BuildContext context, Order order) async {
+  var handoff = order.handoffMethod.isEmpty ? 'استلام من المحل' : order.handoffMethod;
+  var payment = order.paymentMethod.isEmpty ? 'نقداً / باليد' : order.paymentMethod;
+  return showDialog<Map<String, String>>(context: context, builder: (ctx) =>
+    StatefulBuilder(builder: (ctx, refresh) => Directionality(textDirection: TextDirection.rtl,
+      child: AlertDialog(title: const Text('تسجيل تسليم الطلب'),
+        content: Column(mainAxisSize: MainAxisSize.min, children: [
+          DropdownButtonFormField<String>(value: handoff,
+            decoration: const InputDecoration(labelText: 'طريقة التسليم'),
+            items: ['استلام من المحل', 'مع شخص', 'توصيل']
+              .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+            onChanged: (v) { if (v != null) refresh(() => handoff = v); }),
+          const SizedBox(height: 12),
+          DropdownButtonFormField<String>(value: payment,
+            decoration: const InputDecoration(labelText: 'طريقة الدفع'),
+            items: ['نقداً / باليد', 'مع شخص', 'Whish Money']
+              .map((v) => DropdownMenuItem(value: v, child: Text(v))).toList(),
+            onChanged: (v) { if (v != null) refresh(() => payment = v); }),
+          const SizedBox(height: 8),
+          Text('المقبوض المسجّل: ${money(order.paid)} من ${money(order.price)}',
+            style: const TextStyle(color: Colors.white70, fontSize: 12)),
+        ]),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
+          FilledButton(onPressed: () => Navigator.pop(ctx,
+            {'handoff': handoff, 'payment': payment}), child: const Text('تأكيد التسليم')),
+        ]))));
+}
+
 class OrderTile extends StatelessWidget {
   const OrderTile({super.key, required this.order, required this.store});
   final Order order;
   final StudioStore store;
   @override Widget build(BuildContext context) => Card(child: ListTile(
-    title: Text('${order.product} — ${order.customer}'),
+    title: Text('${order.orderNumber.isEmpty ? 'بانتظار الرقم' : order.orderNumber} · ${order.product} — ${order.customer}'),
     subtitle: Text('التسليم: ${date(order.dueDate)}  •  ${order.status}  •  باقي ${money(order.outstanding)}'),
     trailing: const Icon(Icons.open_in_new, color: gold),
     onTap: () => showDialog<void>(context: context, builder: (context) => Directionality(
       textDirection: TextDirection.rtl,
-      child: AlertDialog(title: Text('طلب ${order.customer}'), content: SizedBox(
+      child: AlertDialog(title: Text('طلب ${order.orderNumber.isEmpty ? 'بانتظار الرقم' : order.orderNumber} · ${order.customer}'), content: SizedBox(
         width: 450, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('المنتج: ${order.product}'),
+            Text('رقم الطلب: ${order.orderNumber.isEmpty ? 'بانتظار المزامنة' : order.orderNumber}'),
+            Text('المنتج: ${order.product} · الكمية: ${order.quantity}'),
+            if (order.phone.isNotEmpty) Text('الهاتف: ${order.phone}'),
+            if (order.address.isNotEmpty) Text('العنوان: ${order.address}'),
+            Text('تاريخ الطلب: ${date(order.orderDate)}'),
             Text('التسليم: ${date(order.dueDate)}'),
             Text('السعر: ${money(order.price)}'),
             Text('المقبوض: ${money(order.paid)}'),
             Text('الباقي: ${money(order.outstanding)}'),
+            Text('طريقة التسليم: ${order.handoffMethod.isEmpty ? 'غير محددة بعد' : order.handoffMethod}'),
+            Text('طريقة الدفع الأخيرة: ${order.paymentMethod.isEmpty ? 'غير محددة بعد' : order.paymentMethod}'),
+            const SizedBox(height: 8),
+            const Text('سجل الدفعات', style: TextStyle(fontWeight: FontWeight.bold)),
+            if (order.payments.isEmpty && order.paid > 0)
+              const Text('المقبوض القديم: لا توجد تفاصيل تاريخية منفصلة للدفعات.'),
+            for (final payment in order.payments)
+              Text('${date(payment.receivedAt)} · ${payment.method} · ${money(payment.amount)}${payment.notes.isEmpty ? '' : ' · ${payment.notes}'}'),
+            if (order.payments.isEmpty && order.paid <= 0)
+              const Text('لم تُسجّل أي دفعة بعد.'),
             const Divider(),
             const Text('تفاصيل تكلفة الطلب', style: TextStyle(fontWeight: FontWeight.bold)),
             for (final line in order.usedMaterials)
@@ -525,36 +1219,96 @@ class OrderTile extends StatelessWidget {
             Text(order.inventoryDeducted ? 'المواد انخصمت من المخزون' : 'المواد مش مخصومة من المخزون بعد',
               style: TextStyle(color: order.inventoryDeducted ? Colors.greenAccent : Colors.orangeAccent)),
             if (order.notes.isNotEmpty) Text('ملاحظات: ${order.notes}'),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(onPressed: () { Navigator.pop(context); showOrderForm(context, store, existing: order); },
+              icon: const Icon(Icons.edit_outlined), label: const Text('تعديل بيانات الطلب')),
+            OutlinedButton.icon(style: OutlinedButton.styleFrom(foregroundColor: Colors.redAccent),
+              onPressed: () async {
+                final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+                  title: const Text('حذف الطلب؟'),
+                  content: const Text('سيُحذف من قائمة العمل. إذا كانت مواده قد خُصمت، سيُعاد رصيدها للمخزون. سيُسجّل الحذف للمزامنة مع أجهزتك.'),
+                  actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+                    FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('تأكيد الحذف'))]));
+                if (ok == true) { await store.deleteOrder(order); if (context.mounted) Navigator.pop(context); }
+              }, icon: const Icon(Icons.delete_outline), label: const Text('حذف الطلب')),
             const SizedBox(height: 15),
             if (!order.inventoryDeducted && order.usedMaterials.isNotEmpty)
               FilledButton.tonalIcon(icon: const Icon(Icons.inventory_outlined),
-                label: const Text('تأكيد استهلاك المواد وخصمها'),
+                label: const Text('تأكيد الجاهزية وخصم المواد'),
                 onPressed: () async {
-                  final message = await store.confirmMaterialUsage(order);
+                  if (order.price <= 0) {
+                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                       content: Text('سجّل سعر البيع من تعديل الطلب قبل تأكيد الجاهزية.')));
+                     return;
+                   }
+                   final message = await store.confirmMaterialUsage(order);
                   if (!context.mounted) return;
                   if (message != null) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
                   } else {
+                    order.status = 'جاهز';
+                    await store.updateOrder(order);
                     Navigator.pop(context);
                   }
                 }),
             const SizedBox(height: 10),
             DropdownButtonFormField<String>(value: order.status,
               decoration: const InputDecoration(labelText: 'حالة الطلب'),
-              items: ['جديد', 'قيد التنفيذ', 'جاهز', 'تم التسليم']
+              // A ready order has already consumed stock; a delivered order is final.
+              // Prevent backward transitions that would leave inventory deducted
+              // while making the order appear active again.
+              items: (order.status == 'تم التسليم'
+                  ? ['تم التسليم']
+                  : order.status == 'جاهز'
+                      ? ['جاهز', 'تم التسليم']
+                      : ['جديد', 'قيد التنفيذ', 'جاهز'])
                 .map((s) => DropdownMenuItem(value: s, child: Text(s))).toList(),
-              onChanged: (v) async { if (v != null) { order.status = v; await store.updateOrder(order); } }),
+              onChanged: (v) async {
+                if (v == null || v == order.status) return;
+                if (v == 'جاهز') {
+                  if (order.usedMaterials.isEmpty) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('افتح تعديل الطلب وسجّل الخشب والمواد والتغليف قبل تأكيد الجاهزية.')));
+                    return;
+                  }
+                  if (order.price <= 0) {
+                     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                       content: Text('سجّل سعر البيع من تعديل الطلب قبل تأكيد الجاهزية.')));
+                     return;
+                   }
+                   final message = await store.confirmMaterialUsage(order);
+                  if (message != null) {
+                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+                    return;
+                  }
+                }
+                if (v == 'تم التسليم' && (order.status != 'جاهز' || !order.inventoryDeducted)) {
+                  ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                    content: Text('يجب تأكيد الجاهزية وخصم المواد أولاً، ثم تسجيل التسليم.')));
+                  return;
+                }
+                if (v == 'تم التسليم') {
+                  final handoff = await showHandoffDialog(context, order);
+                  if (handoff == null) return;
+                  order.handoffMethod = handoff['handoff']!;
+                  order.paymentMethod = handoff['payment']!;
+                }
+                order.status = v;
+                if (v == 'تم التسليم') order.deliveredAt = DateTime.now();
+                await store.updateOrder(order);
+              }),
+
             const SizedBox(height: 10),
-            FilledButton(onPressed: () async {
-              final controller = TextEditingController(text: order.paid.toStringAsFixed(2));
-              final result = await showDialog<String>(context: context,
-                builder: (ctx) => AlertDialog(title: const Text('المبلغ المقبوض الإجمالي'),
-                  content: TextField(controller: controller, keyboardType: const TextInputType.numberWithOptions(decimal: true)),
-                  actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
-                    FilledButton(onPressed: () => Navigator.pop(ctx, controller.text), child: const Text('حفظ'))]));
-              final n = double.tryParse(result ?? '');
-              if (n != null && n >= 0 && n <= order.price) { order.paid = n; await store.updateOrder(order); }
-            }, child: const Text('تحديث المقبوض')),
+            FilledButton.icon(onPressed: order.outstanding <= 0 ? null : () async {
+              final payment = await showPaymentDialog(context, order);
+              if (payment == null) return;
+              try {
+                await store.addPayment(order, payment);
+              } catch (e) {
+                if (context.mounted) ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('تعذّر تسجيل الدفعة: $e')));
+              }
+            }, icon: const Icon(Icons.add_card_rounded), label: const Text('تسجيل دفعة جديدة')),
           ]))), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('إغلاق'))])))));
 }
 
@@ -633,15 +1387,28 @@ Widget costLine(String title, double value, {bool bold = false}) => Padding(
       fontWeight: bold ? FontWeight.w700 : FontWeight.normal)),
   ]));
 
-Future<void> showOrderForm(BuildContext context, StudioStore store) async {
-  final customer = TextEditingController();
-  final product = TextEditingController();
-  final price = TextEditingController();
-  final paid = TextEditingController(text: '0');
-  final laserMinutes = TextEditingController(text: '0');
-  final used = <UsedMaterial>[];
-  final notes = TextEditingController();
-  DateTime due = DateTime.now().add(const Duration(days: 3));
+Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? existing}) async {
+  final customer = TextEditingController(text: existing?.customer ?? '');
+  final phone = TextEditingController(text: existing?.phone ?? '');
+  final address = TextEditingController(text: existing?.address ?? '');
+  final quantity = TextEditingController(text: existing?.quantity.toString() ?? '1');
+  final product = TextEditingController(text: existing?.product ?? '');
+  final price = TextEditingController(text: existing?.price.toStringAsFixed(2) ?? '0');
+  final laserMinutes = TextEditingController(text: existing?.laserMinutes.toStringAsFixed(0) ?? '0');
+  final used = List<UsedMaterial>.of(existing?.usedMaterials ?? const <UsedMaterial>[]);
+  final notes = TextEditingController(text: existing?.notes ?? '');
+  DateTime due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 3));
+  DateTime orderDate = existing?.orderDate ?? DateTime.now();
+  String? selectedCatalogId;
+  if (existing != null) {
+    for (final item in store.products) {
+      if (item.active && item.name == existing.product) {
+        selectedCatalogId = item.id;
+        if (existing.price <= 0) price.text = item.salePrice.toStringAsFixed(2);
+        break;
+      }
+    }
+  }
   final key = GlobalKey<FormState>();
   await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
     builder: (ctx, setForm) {
@@ -650,51 +1417,88 @@ Future<void> showOrderForm(BuildContext context, StudioStore store) async {
       final electricity = laserElectricity(minutes);
       final priceValue = double.tryParse(price.text) ?? 0;
       return Directionality(textDirection: TextDirection.rtl,
-      child: AlertDialog(title: const Text('طلب جديد'), content: SizedBox(width: 480,
+      child: AlertDialog(title: Text(existing == null ? 'طلب جديد' : 'تعديل الطلب ${existing.orderNumber.isEmpty ? existing.id : existing.orderNumber}'), content: SizedBox(width: 480,
         child: Form(key: key, child: SingleChildScrollView(child: Column(
           mainAxisSize: MainAxisSize.min, children: [
             _field('اسم الزبون', customer, required: true),
-            _field('اسم المنتج', product, required: true),
-            TextFormField(controller: price,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'سعر البيع بالدولار'),
-              validator: (v) => (double.tryParse(v ?? '') ?? -1) < 0 ? 'أدخل سعر بيع صحيح' : null,
-              onChanged: (_) => setForm(() {})),
-            const SizedBox(height: 10),
-            _field('الدفعة المقبوضة', paid, numeric: true),
-            const SizedBox(height: 12),
-            const Text('المواد المستخدمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-            if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('اختار الخشب أو الأكريليك أو التغليف من مخزونك.')),
-            ...used.asMap().entries.map((e) => ListTile(dense: true,
-              title: Text(e.value.name),
-              subtitle: Text('${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(money(e.value.cost), style: const TextStyle(color: gold)),
-                IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
-                  onPressed: () => setForm(() => used.removeAt(e.key))),
-              ]))),
-            OutlinedButton.icon(icon: const Icon(Icons.add),
-              label: const Text('إضافة مادة من المخزون'),
-              onPressed: () async {
-                final line = await chooseUsedMaterial(ctx, store);
-                if (line != null) setForm(() => used.add(line));
+            _field('رقم الهاتف', phone, numeric: false),
+            _field('العنوان', address),
+            if (store.products.any((p) => p.active))
+              Padding(padding: const EdgeInsets.only(bottom: 9), child: DropdownButtonFormField<String>(
+                value: store.products.any((p) => p.id == selectedCatalogId && p.active) ? selectedCatalogId : null,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'اختر من كتالوج المنتجات'),
+                items: store.products.where((p) => p.active).map((p) => DropdownMenuItem(
+                  value: p.id, child: Text('${p.name}${p.size.isEmpty ? '' : ' — ${p.size}'}',
+                    overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (id) {
+                  if (id == null) return;
+                  final item = store.products.firstWhere((p) => p.id == id);
+                  setForm(() {
+                    selectedCatalogId = id;
+                    product.text = item.name;
+                    if (existing != null && existing.paid <= 0) price.text = item.salePrice.toStringAsFixed(2);
+                  });
+                },
+              )),
+            _field('نوع الطلب / المنتج', product, required: true),
+            _field('الكمية', quantity, numeric: true, required: true),
+            if (existing == null)
+              const Padding(padding: EdgeInsets.only(bottom: 8),
+                child: Text('سيُسجّل الطلب أولاً قيد التنفيذ. أضف السعر والمواد والتكلفة عند تجهيز الطلب.',
+                  style: TextStyle(color: Colors.white70, fontSize: 11))),
+            ListTile(title: const Text('تاريخ الطلب'), subtitle: Text(date(orderDate)),
+              trailing: const Icon(Icons.event), onTap: () async {
+                final value = await showDatePicker(context: ctx, initialDate: orderDate,
+                  firstDate: DateTime(2020), lastDate: DateTime(2100));
+                if (value != null) setForm(() => orderDate = value);
               }),
-            const SizedBox(height: 12),
-            TextFormField(controller: laserMinutes,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'دقائق تشغيل الليزر فقط'),
-              onChanged: (_) => setForm(() {})),
-            const Padding(padding: EdgeInsets.symmetric(vertical: 7),
-              child: Text('تقدير الكهرباء: 216 واط × 0.90 دولار/كيلوواط ساعة. بلا حساب وقت شغلك.',
-                style: TextStyle(fontSize: 11, color: Colors.white70))),
-            Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
-              costLine('المواد والتغليف', materialCost),
-              costLine('كهرباء الليزر', electricity),
-              const Divider(),
-              costLine('إجمالي تكلفة الطلب', materialCost + electricity, bold: true),
-              costLine('ربح الطلب بعد التكاليف المباشرة', priceValue - materialCost - electricity, bold: true),
-            ]))),
+            if (existing != null) ...[
+              TextFormField(controller: price,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'سعر البيع بالدولار'),
+                validator: (v) => (double.tryParse(v ?? '') ?? -1) < 0 ? 'أدخل سعر بيع صحيح' : null,
+                onChanged: (_) => setForm(() {})),
+              const SizedBox(height: 10),
+              Text('المقبوض حتى الآن: ${money(existing.paid)} — أضف الدفعات من سجل الطلب.',
+                style: const TextStyle(color: Colors.white70, fontSize: 11)),
+              const SizedBox(height: 12),
+              const Text('المواد المستخدمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+              if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('اختار الخشب أو الأكريليك أو التغليف من مخزونك.')),
+              ...used.asMap().entries.map((e) => ListTile(dense: true,
+                title: Text(e.value.name),
+                subtitle: Text('${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(money(e.value.cost), style: const TextStyle(color: gold)),
+                  IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
+                    onPressed: existing.inventoryDeducted ? null : () => setForm(() => used.removeAt(e.key))),
+                ]))),
+              if (existing.inventoryDeducted)
+                const Text('تم خصم هذه المواد من المخزون؛ تعديل قائمة المواد مقفول حتى لا تختل الكميات. يمكنك تعديل بقية بيانات الطلب.',
+                  style: TextStyle(color: Colors.orangeAccent, fontSize: 11)),
+              OutlinedButton.icon(icon: const Icon(Icons.add),
+                label: const Text('إضافة مادة من المخزون'),
+                onPressed: existing.inventoryDeducted ? null : () async {
+                  final line = await chooseUsedMaterial(ctx, store);
+                  if (line != null) setForm(() => used.add(line));
+                }),
+              const SizedBox(height: 12),
+              TextFormField(controller: laserMinutes,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'دقائق تشغيل الليزر فقط'),
+                onChanged: (_) => setForm(() {})),
+              const Padding(padding: EdgeInsets.symmetric(vertical: 7),
+                child: Text('تقدير الكهرباء: 216 واط × 0.90 دولار/كيلوواط ساعة. بلا حساب وقت شغلك.',
+                  style: TextStyle(fontSize: 11, color: Colors.white70))),
+              Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+                costLine('المواد والتغليف', materialCost),
+                costLine('كهرباء الليزر', electricity),
+                const Divider(),
+                costLine('إجمالي تكلفة الطلب', materialCost + electricity, bold: true),
+                costLine('ربح الطلب بعد التكاليف المباشرة', priceValue - materialCost - electricity, bold: true),
+              ]))),
+            ],
             const SizedBox(height: 10),
             _field('ملاحظات', notes),
             ListTile(title: const Text('موعد التسليم'), subtitle: Text(date(due)),
@@ -708,25 +1512,41 @@ Future<void> showOrderForm(BuildContext context, StudioStore store) async {
             FilledButton(onPressed: () async {
               if (!key.currentState!.validate()) return;
               final p = double.tryParse(price.text) ?? -1;
-              final a = double.tryParse(paid.text) ?? -1;
               final duration = double.tryParse(laserMinutes.text) ?? -1;
-              if (p < 0 || a < 0 || a > p || duration < 0 || !duration.isFinite || used.isEmpty) {
-                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر والدفعة ودقائق الليزر، ولازم تختار مادة على الأقل')));
+              final qty = int.tryParse(quantity.text) ?? 0;
+              if (p < 0 || (existing != null && p + 0.000001 < existing.paid) || duration < 0 || !duration.isFinite || qty < 1) {
+                ScaffoldMessenger.of(ctx).showSnackBar(const SnackBar(content: Text('راجع السعر (لا يمكن أن يقل عن المقبوض) والكمية ودقائق الليزر')));
                 return;
               }
               try {
-                await store.addOrder(Order(id: const Uuid().v4(),
-                  customer: customer.text.trim(), product: product.text.trim(),
-                  dueDate: due, price: p, paid: a, materialCost: materialCost,
-                  usedMaterials: List.of(used), laserMinutes: duration,
-                  electricCost: laserElectricity(duration),
-                  status: 'جديد', createdAt: DateTime.now(), notes: notes.text.trim()));
+                if (existing == null) {
+                  await store.addOrder(Order(id: const Uuid().v4(),
+                    customer: customer.text.trim(), product: product.text.trim(),
+                    phone: phone.text.trim(), address: address.text.trim(), quantity: qty, orderDate: orderDate,
+                    dueDate: due, price: p, paid: 0, materialCost: materialCost,
+                    usedMaterials: List.of(used), laserMinutes: duration,
+                    electricCost: laserElectricity(duration),
+                    status: 'قيد التنفيذ', createdAt: DateTime.now(), notes: notes.text.trim()));
+                } else {
+                  existing.customer = customer.text.trim();
+                  existing.phone = phone.text.trim(); existing.address = address.text.trim();
+                  existing.quantity = qty; existing.orderDate = orderDate;
+                  existing.product = product.text.trim();
+                  existing.dueDate = due;
+                  existing.price = p;
+                  existing.materialCost = materialCost;
+                  existing.usedMaterials = List.of(used);
+                  existing.laserMinutes = duration;
+                  existing.electricCost = laserElectricity(duration);
+                  existing.notes = notes.text.trim();
+                  await store.updateOrder(existing);
+                }
                 if (ctx.mounted) Navigator.pop(ctx);
               } catch (e) { if (ctx.mounted) ScaffoldMessenger.of(ctx).showSnackBar(SnackBar(content: Text('فشل الحفظ: $e'))); }
             }, child: const Text('حفظ الطلب')),
           ]));
     }));
-  for (final c in [customer, product, price, paid, laserMinutes, notes]) { c.dispose(); }
+  for (final c in [customer, phone, address, quantity, product, price, laserMinutes, notes]) { c.dispose(); }
 }
 Widget _field(String label, TextEditingController controller,
     {bool numeric = false, bool required = false}) => Padding(
@@ -749,30 +1569,49 @@ class InventoryPage extends StatelessWidget {
     ...store.materials.map((m) => Card(child: ListTile(
       title: Text(m.name),
       subtitle: Text('${m.category} • ${m.quantity.toStringAsFixed(2)} ${m.unit} • سعر ${m.unit} ${m.unitCost.toStringAsFixed(6)} دولار'),
-      trailing: m.quantity <= m.reorderLevel ? const Icon(Icons.warning_amber, color: gold) : null,
+      trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (m.quantity <= m.reorderLevel) const Icon(Icons.warning_amber, color: gold, size: 19),
+        IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.delete_outline, color: Colors.redAccent),
+          onPressed: () async {
+            final ok = await showDialog<bool>(context: context, builder: (ctx) => AlertDialog(
+              title: const Text('حذف المادة من المخزون؟'),
+              content: Text('سيتم إخفاء «${m.name}» من قائمة المواد. تفاصيل استخدامها السابقة ستبقى محفوظة داخل الطلبات.'),
+              actions: [TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('إلغاء')),
+                FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('حذف'))]));
+            if (ok == true) await store.deleteMaterial(m);
+          }),
+      ]),
       onTap: () async {
+        final name = TextEditingController(text: m.name);
         final input = TextEditingController(text: m.quantity.toString());
+        final limit = TextEditingController(text: m.reorderLevel.toString());
         final price = TextEditingController(text: (m.unitCost * m.packUnits).toStringAsFixed(3));
-        final value = await showDialog<List<double>>(context: context,
-          builder: (ctx) => AlertDialog(title: Text('تعديل ${m.name}'),
-            content: SizedBox(width: 400, child: Column(mainAxisSize: MainAxisSize.min, children: [
+        final value = await showDialog<List<String>>(context: context,
+          builder: (ctx) => AlertDialog(title: Text('تفاصيل وتعديل · ${m.name}'),
+            content: SizedBox(width: 420, child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              _field('اسم المادة', name, required: true),
               _field('الكمية الحالية (${m.unit})', input, numeric: true),
+              _field('حد تنبيه النقص (${m.unit})', limit, numeric: true),
               _field('سعر اللوح/الرول/العبوة', price, numeric: true),
-            ])),
+              Align(alignment: Alignment.centerRight, child: Text('التصنيف: ${m.category} · وحدة القياس: ${m.unit}',
+                style: const TextStyle(color: Colors.white70, fontSize: 12))),
+            ]))),
             actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إلغاء')),
               FilledButton(onPressed: () {
-                final n = double.tryParse(input.text);
-                final c = double.tryParse(price.text);
-                if (n != null && c != null && n.isFinite && c.isFinite && n >= 0 && c >= 0) {
-                  Navigator.pop(ctx, [n, c]);
+                final n = double.tryParse(input.text), l = double.tryParse(limit.text), c = double.tryParse(price.text);
+                if (name.text.trim().isNotEmpty && n != null && l != null && c != null &&
+                    n.isFinite && l.isFinite && c.isFinite && n >= 0 && l >= 0 && c >= 0) {
+                  Navigator.pop(ctx, [name.text.trim(), n.toString(), l.toString(), c.toString()]);
                 }
-              }, child: const Text('حفظ'))]));
+              }, child: const Text('حفظ التعديلات'))]));
         if (value != null) {
-          m.quantity = value[0];
-          m.unitCost = value[1] / m.packUnits;
+          m.name = value[0];
+          m.quantity = double.parse(value[1]);
+          m.reorderLevel = double.parse(value[2]);
+          m.unitCost = double.parse(value[3]) / m.packUnits;
           await store.updateMaterial(m);
         }
-        input.dispose(); price.dispose();
+        name.dispose(); input.dispose(); limit.dispose(); price.dispose();
       }))),
     const SizedBox(height: 18),
     const Text('بتختار المواد داخل الطلب. عند تأكيد استهلاكها بتنخصم من المخزون مرة واحدة فقط.',
@@ -847,9 +1686,11 @@ class AccountsPage extends StatelessWidget {
   const AccountsPage({super.key, required this.store});
   final StudioStore store;
   @override Widget build(BuildContext context) {
-    final sales = store.orders.fold<double>(0, (v, o) => v + o.price);
-    final paid = store.orders.fold<double>(0, (v, o) => v + o.paid);
-    final costs = store.orders.fold<double>(0, (v, o) => v + o.totalCost);
+    // Only completed handoffs count as realized sales and profit.
+    final completed = store.orders.where((o) => o.status == 'تم التسليم').toList();
+    final sales = completed.fold<double>(0, (v, o) => v + o.price);
+    final paid = completed.fold<double>(0, (v, o) => v + o.paid);
+    final costs = completed.fold<double>(0, (v, o) => v + o.totalCost);
     return content([
       const Text('الحسابات', style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
       const SizedBox(height: 18),
@@ -858,7 +1699,7 @@ class AccountsPage extends StatelessWidget {
       _accountCard('المواد والتغليف وكهرباء الليزر', costs),
       _accountCard('ربح الطلبات بعد التكاليف المباشرة', sales - costs),
       const SizedBox(height: 15),
-      const Text('الربح هون بعد المواد والتغليف وكهرباء الليزر، وقبل المصاريف العامة. بلا حساب أجرة ساعات شغلك.',
+      Text('المحتسب هنا فقط الطلبات التي حالتها «تم التسليم» (${completed.length} طلب). الربح بعد المواد والتغليف وكهرباء الليزر، وقبل المصاريف العامة وأجرة وقت العمل.',
         style: TextStyle(color: Colors.white70)),
     ]);
   }

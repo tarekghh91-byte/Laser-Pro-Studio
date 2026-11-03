@@ -7,8 +7,9 @@ class CloudRecord {
   final int version;
 }
 
-/// Per-user documents with optimistic concurrency (no silent last-write-wins).
-/// This is phase-one sync for orders and materials, not the final accounting model.
+/// Per-user records with optimistic concurrency (no silent last-write-wins).
+/// Orders, materials, customers, products, expenses, suppliers and purchases use this layer.
+/// Conflicts are surfaced to the user instead of silently overwriting another device.
 class CloudSync {
   CloudSync(this.ownerId);
   final String ownerId;
@@ -28,6 +29,16 @@ class CloudSync {
         version: (item['version'] as num).toInt(),
       );
     }).toList();
+  }
+
+  /// Atomically reserves a globally unique LP serial from PostgreSQL.
+  /// The database sequence is shared by every signed-in device.
+  Future<String> nextOrderNumber() async {
+    final result = await _db.rpc('lp_next_order_number');
+    if (result is! String || !RegExp(r'^LP[0-9]{4,}$').hasMatch(result)) {
+      throw StateError('تعذّر الحصول على رقم طلب تسلسلي صالح');
+    }
+    return result;
   }
 
   Future<int> put(String collection, String id, Map<String, dynamic> payload, int expectedVersion) async {

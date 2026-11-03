@@ -1,7 +1,7 @@
 name: Android Small APK (test)
 on:
   push:
-    branches: [main]
+    branches: [main, "design/**"]
     paths:
       - '.github/workflows/build-android-light.yml'
       - 'lib/**'
@@ -39,16 +39,16 @@ jobs:
           s=f.read_text()
           assert '<application' in s
           if 'android.permission.INTERNET' not in s:
-              s=s.replace('<application', '<uses-permission android:name="android.permission.INTERNET" />\n    <application', 1)
+              s=s.replace('<application', '<uses-permission android:name="android.permission.INTERNET" />' + chr(10) + '    <application', 1)
               f.write_text(s)
           Path('test/widget_test.dart').unlink(missing_ok=True)
           PY
       - name: Flutter dependencies
         run: flutter pub get
-      - name: Check compilation
+      - name: Analyze Dart sources
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
-      - name: Build compact ARM64 APK
-        run: flutter build apk --release --target-platform android-arm64
+      - name: Build premium ARM64 APK
+        run: flutter build apk --release --target-platform android-arm64 -t lib/main_premium.dart
       - name: Verify APK is a zip archive
         run: |
           unzip -t build/app/outputs/flutter-apk/app-release.apk > /dev/null
@@ -56,7 +56,7 @@ jobs:
       - name: Save small APK
         uses: actions/upload-artifact@v4
         with:
-          name: LaserProStudio-Android-ARM64-SMALL-TEST
+          name: LaserStudioPro-Premium-Android-ARM64-TEST
           path: build/app/outputs/flutter-apk/app-release.apk
           retention-days: 14
           if-no-files-found: error

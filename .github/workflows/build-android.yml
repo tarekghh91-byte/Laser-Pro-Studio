@@ -39,12 +39,14 @@ jobs:
           cache: true
       - name: Generate Android platform files
         run: flutter create --project-name laser_pro_studio --platforms=android .
+      - name: Remove generated counter test
+        run: rm -f test/widget_test.dart
       - name: Fetch dependencies
         run: flutter pub get
       - name: Analyze Dart code
         run: flutter analyze --no-fatal-infos --no-fatal-warnings
-      - name: Build debug APK (test only; syncing prototype)
-        run: flutter build apk --debug
+      - name: Build premium debug APK (test only)
+        run: flutter build apk --debug -t lib/main_premium.dart
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
