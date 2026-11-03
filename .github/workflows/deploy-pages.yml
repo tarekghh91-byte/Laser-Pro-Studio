@@ -23,6 +23,18 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Check application JavaScript syntax
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path('index.html').read_text(encoding='utf-8')
+          scripts = re.findall(r'<script>(.*?)</script>', html, re.S)
+          if not scripts:
+              raise SystemExit('No inline application script found')
+          Path('/tmp/laser-app.js').write_text(scripts[0], encoding='utf-8')
+          PY
+          node --check /tmp/laser-app.js
       - name: Configure GitHub Pages
         uses: actions/configure-pages@v5
       - name: Upload site
