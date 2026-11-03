@@ -52,13 +52,38 @@ class UsedMaterial {
   );
 }
 
+String _stableCustomerId(String key) {
+  var hash = 0xcbf29ce484222325;
+  for (final unit in key.codeUnits) {
+    hash ^= unit;
+    hash = (hash * 0x100000001b3) & 0x7fffffffffffffff;
+  }
+  return 'cust_${hash.toRadixString(16)}';
+}
+
+class Customer {
+  Customer({required this.id, required this.name, this.phone = '', this.address = '',
+    DateTime? createdAt, this.archived = false}) : createdAt = createdAt ?? DateTime.now();
+  final String id;
+  String name, phone, address;
+  DateTime createdAt;
+  bool archived;
+  Map<String, dynamic> toJson() => {'id': id, 'name': name, 'phone': phone,
+    'address': address, 'createdAt': createdAt.toIso8601String(), 'archived': archived};
+  factory Customer.fromJson(Map<String, dynamic> j) => Customer(
+    id: j['id'] as String, name: j['name'] as String? ?? '',
+    phone: j['phone'] as String? ?? '', address: j['address'] as String? ?? '',
+    createdAt: DateTime.tryParse(j['createdAt'] as String? ?? ''),
+    archived: j['archived'] as bool? ?? false);
+}
+
 class Order {
   Order({required this.id, required this.customer, required this.product,
     required this.dueDate, required this.price, required this.paid,
     required this.materialCost, required this.status, required this.createdAt,
     this.notes = '', this.phone = '', this.address = '', this.quantity = 1,
     this.orderNumber = '', this.handoffMethod = '', this.paymentMethod = '',
-    DateTime? orderDate, DateTime? deliveredAt, List<UsedMaterial>? usedMaterials,
+    this.customerId = '', DateTime? orderDate, DateTime? deliveredAt, List<UsedMaterial>? usedMaterials,
     this.laserMinutes = 0, this.electricCost = 0, this.inventoryDeducted = false})
       : orderDate = orderDate ?? createdAt, deliveredAt = deliveredAt,
         usedMaterials = usedMaterials ?? [];
@@ -66,6 +91,7 @@ class Order {
   String orderNumber;
   String handoffMethod;
   String paymentMethod;
+  String customerId;
   String customer;
   String product;
   DateTime dueDate;
@@ -88,7 +114,7 @@ class Order {
   double get totalCost => materialCost + electricCost;
   double get grossMargin => price - totalCost;
   Map<String, dynamic> toJson() => {
-    'id': id, 'orderNumber': orderNumber, 'handoffMethod': handoffMethod, 'paymentMethod': paymentMethod, 'customer': customer, 'product': product,
+    'id': id, 'orderNumber': orderNumber, 'handoffMethod': handoffMethod, 'paymentMethod': paymentMethod, 'customerId': customerId, 'customer': customer, 'product': product,
     'dueDate': dueDate.toIso8601String(), 'price': price, 'paid': paid,
     'materialCost': materialCost, 'status': status,
     'createdAt': createdAt.toIso8601String(), 'notes': notes,
@@ -101,7 +127,7 @@ class Order {
   };
   factory Order.fromJson(Map<String, dynamic> j) => Order(
     id: j['id'] as String, orderNumber: j['orderNumber'] as String? ?? '',
-    handoffMethod: j['handoffMethod'] as String? ?? '', paymentMethod: j['paymentMethod'] as String? ?? '', customer: j['customer'] as String,
+    handoffMethod: j['handoffMethod'] as String? ?? '', paymentMethod: j['paymentMethod'] as String? ?? '', customerId: j['customerId'] as String? ?? '', customer: j['customer'] as String,
     product: j['product'] as String,
     dueDate: DateTime.parse(j['dueDate'] as String),
     price: (j['price'] as num).toDouble(),
@@ -155,11 +181,15 @@ class StudioStore extends ChangeNotifier {
   final CloudSync _cloud;
   final List<Order> orders = [];
   final List<Material> materials = [];
+  final List<Customer> customers = [];
   final Set<String> _pendingOrders = {};
+  final Set<String> _pendingCustomers = {};
+  final Set<String> _deletedCustomers = {};
   final Set<String> _pendingMaterials = {};
   final Set<String> _deletedOrders = {};
   final Set<String> _deletedMaterials = {};
   final Map<String, int> _orderVersions = {};
+  final Map<String, int> _customerVersions = {};
   final Map<String, int> _materialVersions = {};
   Timer? _syncTimer;
   bool loading = true;
@@ -170,7 +200,7 @@ class StudioStore extends ChangeNotifier {
   File? _file;
   Future<void> _writeChain = Future<void>.value();
 
-  bool get hasPendingWrites => _pendingOrders.isNotEmpty || _pendingMaterials.isNotEmpty;
+  bool get hasPendingWrites => _pendingOrders.isNotEmpty || _pendingMaterials.isNotEmpty || _pendingCustomers.isNotEmpty || _deletedCustomers.isNotEmpty;
   void _notify() { if (!_disposed) notifyListeners(); }
 
   Future<void> load() async {
@@ -184,6 +214,13 @@ class StudioStore extends ChangeNotifier {
           (e) => Order.fromJson(Map<String, dynamic>.from(e as Map))));
         materials.addAll((raw['materials'] as List<dynamic>? ?? []).map(
           (e) => Material.fromJson(Map<String, dynamic>.from(e as Map))));
+        customers.addAll((raw['customers'] as List<dynamic>? ?? []).map(
+          (e) => Customer.fromJson(Map<String, dynamic>.from(e as Map))));
+        _pendingCustomers.addAll(List<String>.from(raw['pendingCustomers'] as List? ?? []));
+        _deletedCustomers.addAll(List<String>.from(raw['deletedCustomers'] as List? ?? []));
+        for (final entry in (raw['customerVersions'] as Map<String, dynamic>? ?? {}).entries) {
+          _customerVersions[entry.key] = (entry.value as num).toInt();
+        }
         _pendingOrders.addAll(List<String>.from(raw['pendingOrders'] as List? ?? []));
         _pendingMaterials.addAll(List<String>.from(raw['pendingMaterials'] as List? ?? []));
         _deletedOrders.addAll(List<String>.from(raw['deletedOrders'] as List? ?? []));
@@ -212,6 +249,10 @@ class StudioStore extends ChangeNotifier {
       'schemaVersion': 3,
       'orders': orders.map((e) => e.toJson()).toList(),
       'materials': materials.map((e) => e.toJson()).toList(),
+      'customers': customers.map((e) => e.toJson()).toList(),
+      'pendingCustomers': _pendingCustomers.toList(),
+      'deletedCustomers': _deletedCustomers.toList(),
+      'customerVersions': _customerVersions,
       'pendingOrders': _pendingOrders.toList(),
       'pendingMaterials': _pendingMaterials.toList(),
       'deletedOrders': _deletedOrders.toList(),
@@ -242,8 +283,57 @@ class StudioStore extends ChangeNotifier {
     unawaited(syncNow());
   }
 
-  Future<void> addOrder(Order o) async { orders.add(o); await _save(orderId: o.id); }
-  Future<void> updateOrder(Order o) async => _save(orderId: o.id);
+  String _customerKey(String name, String phone) {
+    final normalizedPhone = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    return normalizedPhone.isNotEmpty ? 'phone:$normalizedPhone' : 'name:${name.trim().toLowerCase()}';
+  }
+
+  Customer _ensureCustomer(Order order) {
+    if (order.customerId.isNotEmpty) {
+      final found = customers.where((c) => c.id == order.customerId);
+      if (found.isNotEmpty) return found.first;
+    }
+    final key = _customerKey(order.customer, order.phone);
+    final id = _stableCustomerId(key);
+    final found = customers.where((c) => c.id == id);
+    final customer = found.isNotEmpty ? found.first : Customer(
+      id: id, name: order.customer, phone: order.phone, address: order.address);
+    if (found.isEmpty) { customers.add(customer); _pendingCustomers.add(id); }
+    order.customerId = id;
+    return customer;
+  }
+
+  Future<void> addCustomer(Customer customer) async {
+    customers.add(customer); _pendingCustomers.add(customer.id);
+    await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> updateCustomer(Customer customer) async {
+    _pendingCustomers.add(customer.id);
+    await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+  Future<void> archiveCustomer(Customer customer) async {
+    customer.archived = true;
+    await updateCustomer(customer);
+  }
+  Future<void> deleteCustomer(Customer customer) async {
+    if (orders.any((o) => o.customerId == customer.id)) {
+      await archiveCustomer(customer);
+      return;
+    }
+    customers.removeWhere((c) => c.id == customer.id);
+    _pendingCustomers.remove(customer.id); _deletedCustomers.add(customer.id);
+    await _saveLocal(); _notify(); unawaited(syncNow());
+  }
+
+  Future<void> addOrder(Order o) async {
+    _ensureCustomer(o); orders.add(o);
+    await _save(orderId: o.id);
+    if (o.customerId.isNotEmpty) { _pendingCustomers.add(o.customerId); await _saveLocal(); unawaited(syncNow()); }
+  }
+  Future<void> updateOrder(Order o) async {
+    _ensureCustomer(o); await _save(orderId: o.id);
+    if (o.customerId.isNotEmpty) { _pendingCustomers.add(o.customerId); await _saveLocal(); unawaited(syncNow()); }
+  }
   Future<void> addMaterial(Material m) async { materials.add(m); await _save(materialId: m.id); }
   Future<void> updateMaterial(Material m) async => _save(materialId: m.id);
 
@@ -285,6 +375,11 @@ class StudioStore extends ChangeNotifier {
     _notify();
     var conflict = false;
     try {
+      for (final id in _deletedCustomers.toList()) {
+        final version = await _cloud.put('customers', id, {'id': id, '_deleted': true}, _customerVersions[id] ?? 0);
+        _customerVersions[id] = version;
+        _deletedCustomers.remove(id);
+      }
       for (final id in _deletedMaterials.toList()) {
         final version = await _cloud.put('materials', id, {'id': id, '_deleted': true}, _materialVersions[id] ?? 0);
         _materialVersions[id] = version;
@@ -294,6 +389,19 @@ class StudioStore extends ChangeNotifier {
         final version = await _cloud.put('orders', id, {'id': id, '_deleted': true}, _orderVersions[id] ?? 0);
         _orderVersions[id] = version;
         _deletedOrders.remove(id);
+      }
+      for (final id in _pendingCustomers.toList()) {
+        final matches = customers.where((c) => c.id == id);
+        if (matches.isEmpty) continue;
+        final customer = matches.first;
+        try {
+          final version = await _cloud.put('customers', id, customer.toJson(), _customerVersions[id] ?? 0);
+          _customerVersions[id] = version;
+          _pendingCustomers.remove(id);
+        } catch (e) {
+          if (e.toString().contains('SYNC_CONFLICT')) { conflict = true; continue; }
+          rethrow;
+        }
       }
       for (final id in _pendingMaterials.toList()) {
         final matches = materials.where((m) => m.id == id);
@@ -330,6 +438,19 @@ class StudioStore extends ChangeNotifier {
           rethrow;
         }
       }
+      final remoteCustomers = await _cloud.list('customers');
+      for (final r in remoteCustomers) {
+        if (r.payload['_deleted'] == true) {
+          customers.removeWhere((c) => c.id == r.id);
+          _pendingCustomers.remove(r.id); _deletedCustomers.remove(r.id);
+          _customerVersions[r.id] = r.version; continue;
+        }
+        if (_pendingCustomers.contains(r.id) || _deletedCustomers.contains(r.id)) continue;
+        final idx = customers.indexWhere((c) => c.id == r.id);
+        final item = Customer.fromJson(r.payload);
+        if (idx == -1) { customers.add(item); } else { customers[idx] = item; }
+        _customerVersions[r.id] = r.version;
+      }
       final remoteMaterials = await _cloud.list('materials');
       for (final r in remoteMaterials) {
         if (r.payload['_deleted'] == true) { materials.removeWhere((m) => m.id == r.id); _pendingMaterials.remove(r.id); _deletedMaterials.remove(r.id); _materialVersions[r.id] = r.version; continue; }
@@ -347,6 +468,16 @@ class StudioStore extends ChangeNotifier {
         final item = Order.fromJson(r.payload);
         if (idx == -1) { orders.add(item); } else { orders[idx] = item; }
         _orderVersions[r.id] = r.version;
+      }
+      // Link legacy orders that predate independent customer profiles.
+      for (final order in orders) {
+        if (order.customerId.isEmpty) {
+          _ensureCustomer(order);
+          _pendingOrders.add(order.id);
+        }
+      }
+      if (_pendingCustomers.isNotEmpty || _pendingOrders.isNotEmpty) {
+        // Persist links and profile records; the next sync cycle uploads them.
       }
       await _saveLocal();
       syncStatus = conflict ? 'تعارض تعديل: تأكّد من البيانات قبل المتابعة'
