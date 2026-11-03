@@ -557,8 +557,9 @@ class StudioStore extends ChangeNotifier {
     _pendingSuppliers.add(s.id); await _saveLocal(); _notify(); unawaited(syncNow());
   }
   Future<void> addSupplierPayment(StockPurchase purchase, SupplierPaymentEntry payment) async {
-    if (payment.amount <= 0 || payment.amount > purchase.outstanding + 0.000001) {
-      throw ArgumentError('قيمة الدفعة تتجاوز مستحقات الفاتورة أو غير صالحة');
+    if (!payment.amount.isFinite || payment.amount <= 0 ||
+        payment.amount > purchase.outstanding + 0.000001) {
+      throw ArgumentError('قيمة الدفعة يجب أن تكون رقماً صالحاً ضمن المستحقات');
     }
     final oldPaid = purchase.paidAmount;
     final oldMethod = purchase.paymentMethod;
