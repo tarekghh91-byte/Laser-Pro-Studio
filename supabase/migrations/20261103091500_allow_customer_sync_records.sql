@@ -1,5 +1,11 @@
--- Allow independent customer profiles to use the existing per-user sync store.
--- SECURITY INVOKER and auth.uid() ownership are preserved.
+-- Expand the per-user sync store for independent customers, product catalogue,
+-- and the expense ledger. Keep records scoped by owner_id.
+alter table public.lp_sync_records
+  drop constraint if exists lp_sync_records_collection_check;
+alter table public.lp_sync_records
+  add constraint lp_sync_records_collection_check
+  check (collection = any (array['orders','materials','customers','products','expenses']::text[]));
+
 create or replace function public.lp_put_sync_record(
   p_collection text,
   p_record_id text,
@@ -16,7 +22,7 @@ declare
   v_version bigint;
 begin
   if v_user is null then raise exception 'AUTH_REQUIRED'; end if;
-  if p_collection not in ('orders','materials','customers')
+  if p_collection not in ('orders','materials','customers','products','expenses')
      or length(p_record_id)>128 or length(p_record_id)<1 or p_payload is null then
     raise exception 'INVALID_RECORD';
   end if;
@@ -36,7 +42,6 @@ begin
   return v_version;
 end
 $function$;
-
 revoke execute on function public.lp_put_sync_record(text,text,jsonb,bigint) from public;
 revoke execute on function public.lp_put_sync_record(text,text,jsonb,bigint) from anon;
 grant execute on function public.lp_put_sync_record(text,text,jsonb,bigint) to authenticated;
