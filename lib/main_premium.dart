@@ -1111,6 +1111,7 @@ class PremiumAccountsPage extends StatelessWidget {
     final costs = completed.fold<double>(0, (v, o) => v + o.totalCost);
     final operatingExpenses = store.expenses.fold<double>(0, (v, e) => v + e.amount);
     final netOperating = sales - costs - operatingExpenses;
+    final stockPurchases = store.purchases.fold<double>(0, (v, p) => v + p.totalAmount);
     final outstanding = completed.fold<double>(0, (v, o) => v + (o.outstanding > 0 ? o.outstanding : 0));
     void showOrders(String title, List<core.Order> items) {
       showDialog<void>(context: context, builder: (ctx) => Directionality(
@@ -1176,8 +1177,15 @@ class PremiumAccountsPage extends StatelessWidget {
         Text(core.money(netOperating), style: TextStyle(color: netOperating >= 0 ? gold : Colors.redAccent,
           fontWeight: FontWeight.w900, fontSize: 17)),
       ]))),
+      Card(child: Padding(padding: const EdgeInsets.all(15), child: Row(children: [
+        const Icon(Icons.inventory_2_outlined, color: gold),
+        const SizedBox(width: 10),
+        const Expanded(child: Text('مشتريات المخزون (معلوماتية — غير مخصومة مرة ثانية)',
+          style: TextStyle(fontWeight: FontWeight.w800))),
+        Text(core.money(stockPurchases), style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+      ]))),
       const SizedBox(height: 8),
-      Text('الربح المباشر يطرح المواد والتغليف والكهرباء. صافي النتيجة يطرح أيضاً كل المصاريف التشغيلية المسجلة. لا يشمل بعد أجرة وقت العمل أو الالتزامات غير المسجلة. عدد الطلبات المحتسبة: ${completed.length}.',
+      Text('الربح المباشر يطرح المواد المستهلكة والتغليف والكهرباء. صافي النتيجة يطرح أيضاً المصاريف التشغيلية. قيمة شراء المخزون ظاهرة منفصلة ولا تُطرح هنا؛ كلفته تدخل عند استهلاك المادة في الطلب. لا يشمل بعد أجرة وقت العمل أو الالتزامات غير المسجلة. عدد الطلبات المحتسبة: ${completed.length}.',
         style: const TextStyle(color: muted, fontSize: 10)),
     ]);
   }
