@@ -34,16 +34,7 @@ class CloudSync {
   /// The database sequence is shared by every signed-in device.
   Future<String> nextOrderNumber() async {
     final result = await _db.rpc('lp_next_order_number');
-    if (result is! String || !RegExp(r'^LP[0-9]{4,}
-      'p_collection': collection,
-      'p_record_id': id,
-      'p_payload': payload,
-      'p_expected_version': expectedVersion,
-    });
-    return (result as num).toInt();
-  }
-}
-).hasMatch(result)) {
+    if (result is! String || !RegExp(r'^LP[0-9]{4,}$').hasMatch(result)) {
       throw StateError('تعذّر الحصول على رقم طلب تسلسلي صالح');
     }
     return result;
