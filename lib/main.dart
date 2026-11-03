@@ -1193,6 +1193,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
   final notes = TextEditingController(text: existing?.notes ?? '');
   DateTime due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 3));
   DateTime orderDate = existing?.orderDate ?? DateTime.now();
+  String? selectedCatalogId = store.products.where((p) => p.active && p.name == (existing?.product ?? '')).map((p) => p.id).firstOrNull;
   final key = GlobalKey<FormState>();
   await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
     builder: (ctx, setForm) {
@@ -1207,6 +1208,24 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
             _field('اسم الزبون', customer, required: true),
             _field('رقم الهاتف', phone, numeric: false),
             _field('العنوان', address),
+            if (store.products.any((p) => p.active))
+              Padding(padding: const EdgeInsets.only(bottom: 9), child: DropdownButtonFormField<String>(
+                value: store.products.any((p) => p.id == selectedCatalogId && p.active) ? selectedCatalogId : null,
+                isExpanded: true,
+                decoration: const InputDecoration(labelText: 'اختر من كتالوج المنتجات'),
+                items: store.products.where((p) => p.active).map((p) => DropdownMenuItem(
+                  value: p.id, child: Text('${p.name}${p.size.isEmpty ? '' : ' — ${p.size}'}',
+                    overflow: TextOverflow.ellipsis))).toList(),
+                onChanged: (id) {
+                  if (id == null) return;
+                  final item = store.products.firstWhere((p) => p.id == id);
+                  setForm(() {
+                    selectedCatalogId = id;
+                    product.text = item.name;
+                    if (existing != null && existing.paid <= 0) price.text = item.salePrice.toStringAsFixed(2);
+                  });
+                },
+              )),
             _field('نوع الطلب / المنتج', product, required: true),
             _field('الكمية', quantity, numeric: true, required: true),
             if (existing == null)
