@@ -21,26 +21,7 @@ main{min-width:0;padding:25px clamp(14px,3vw,34px) 70px;max-width:1500px;width:1
 <body>
 <div id="root"><div class="login-wrap"><div class="login"><h1>LASER STUDIO PRO</h1><p>نسخة الصفحة الرئيسية الجديدة — فحص النشر المباشر</p></div></div></div>
 <div id="modal"></div><div id="toast"></div>
-<script>
-(async()=>{
-const root=document.getElementById("root");
-const show=t=>root.innerHTML='<div class="login-wrap"><div class="login"><h1>LASER STUDIO PRO</h1><p>'+t+'</p></div></div>';
-show("JavaScript يعمل. يجري اختبار مكتبة الاتصال…");
-const urls=["https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2","https://unpkg.com/@supabase/supabase-js@2","https://cdnjs.cloudflare.com/ajax/libs/supabase/2.49.4/umd/supabase.min.js"];
-for(const url of urls){
- try{
-  await new Promise((resolve,reject)=>{
-   const sc=document.createElement("script");const timer=setTimeout(()=>{sc.remove();reject(new Error("timeout"))},9000);
-   sc.src=url;sc.onload=()=>{clearTimeout(timer);resolve()};sc.onerror=()=>{clearTimeout(timer);sc.remove();reject(new Error("load"))};document.head.appendChild(sc);
-  });
-  if(window.supabase?.createClient){show("تم تحميل مكتبة Supabase بنجاح. يجري اختبار الاتصال بالخادم…");
-   try{const res=await fetch("https://lwzgdqtkrwezaipymdet.supabase.co/auth/v1/health",{headers:{apikey:"sb_publishable_j_-UerZpooWAAVftOHB-GQ_3KLvCajA"}});show("تم تحميل المكتبة. نتيجة اتصال الخادم: HTTP "+res.status);return}catch(e){show("تم تحميل المكتبة، لكن تعذّر الوصول إلى خادم Supabase: "+(e.message||e));return}
-  }
- }catch(e){}
-}
-show("JavaScript يعمل، لكن تعذّر تحميل مكتبة Supabase من مصادرها الثلاثة. افحص اتصال الإنترنت أو حظر مواقع CDN.");
-})();
-</script>
+
 <script>
 document.getElementById("root").innerHTML='<div class="login-wrap"><div class="login"><h1>LASER STUDIO PRO</h1><p>تم تشغيل الصفحة. يجري الاتصال بخدمات النظام…</p></div></div>';
 (async()=>{
