@@ -992,6 +992,30 @@ class ReportsPage extends StatelessWidget {
     DateTime handoffDate(core.Order o) => o.deliveredAt ?? o.createdAt;
     final month = delivered.where((o) => handoffDate(o).year == now.year && handoffDate(o).month == now.month).toList();
     final today = delivered.where((o) => handoffDate(o).year == now.year && handoffDate(o).month == now.month && handoffDate(o).day == now.day).toList();
+    final monthExpenses = store.expenses.where((e) =>
+      e.expenseDate.year == now.year && e.expenseDate.month == now.month).toList();
+    final todayExpenses = store.expenses.where((e) =>
+      e.expenseDate.year == now.year && e.expenseDate.month == now.month &&
+      e.expenseDate.day == now.day).toList();
+    Widget expenseReportCard(String title, List<core.BusinessExpense> items, IconData icon) {
+      final total = items.fold<double>(0, (v, e) => v + e.amount);
+      return Card(child: InkWell(borderRadius: BorderRadius.circular(17),
+        onTap: () => showDialog<void>(context: context, builder: (ctx) => Directionality(
+          textDirection: TextDirection.rtl,
+          child: AlertDialog(title: Text(title), content: SizedBox(width: 460,
+            child: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text('إجمالي المصاريف: ${core.money(total)}',
+                style: const TextStyle(color: gold, fontWeight: FontWeight.w900)),
+              const Divider(),
+              if (items.isEmpty) const EmptyState('لا توجد مصاريف ضمن هذه الفترة.'),
+              for (final e in items) ListTile(title: Text(e.title),
+                subtitle: Text('${e.category} • ${e.expenseDate.toLocal().toString().substring(0, 10)}'),
+                trailing: Text(core.money(e.amount))),
+            ]))), actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('إغلاق'))]))),
+        child: ListTile(leading: Icon(icon, color: gold), title: Text(title),
+          subtitle: Text('${items.length} مصروف مسجّل'), trailing: Text(core.money(total),
+            style: const TextStyle(color: gold, fontWeight: FontWeight.w900)))));
+    }
     Widget reportCard(String title, List<core.Order> orders, IconData icon) {
       final sales = orders.fold<double>(0, (v, o) => v + o.price);
       final cost = orders.fold<double>(0, (v, o) => v + o.totalCost);
@@ -1026,7 +1050,9 @@ class ReportsPage extends StatelessWidget {
       const Text('ملخص فعلي للطلبات التي تم تسليمها فقط.', style: TextStyle(color: muted, fontSize: 11)),
       const SizedBox(height: 14),
       reportCard('تقرير اليوم', today, Icons.today_rounded),
+      expenseReportCard('مصاريف اليوم', todayExpenses, Icons.receipt_long_outlined),
       reportCard('تقرير الشهر', month, Icons.calendar_month_rounded),
+      expenseReportCard('مصاريف الشهر', monthExpenses, Icons.calendar_month_outlined),
       reportCard('كل الطلبات المسلّمة', delivered, Icons.assessment_outlined),
     ]);
   }
