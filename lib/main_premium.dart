@@ -857,7 +857,7 @@ class ExpensesPage extends StatelessWidget {
               if (title.text.trim().isNotEmpty && n != null && n > 0) Navigator.pop(ctx, true);
             }, child: const Text('حفظ المصروف')),
           ],
-        )));
+        ))));
     if (result == true) {
       if (existing == null) {
         await store.addExpense(core.BusinessExpense(id: DateTime.now().microsecondsSinceEpoch.toString(),
