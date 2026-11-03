@@ -1193,7 +1193,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
   final notes = TextEditingController(text: existing?.notes ?? '');
   DateTime due = existing?.dueDate ?? DateTime.now().add(const Duration(days: 3));
   DateTime orderDate = existing?.orderDate ?? DateTime.now();
-  String? selectedCatalogId = store.products.where((p) => p.active && p.name == (existing?.product ?? '')).map((p) => p.id).firstOrNull;
+  String? selectedCatalogId;
   final key = GlobalKey<FormState>();
   await showDialog<void>(context: context, builder: (ctx) => StatefulBuilder(
     builder: (ctx, setForm) {
