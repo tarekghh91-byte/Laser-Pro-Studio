@@ -777,7 +777,7 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
   final address = TextEditingController(text: existing?.address ?? '');
   final quantity = TextEditingController(text: existing?.quantity.toString() ?? '1');
   final product = TextEditingController(text: existing?.product ?? '');
-  final price = TextEditingController(text: existing?.price.toStringAsFixed(2) ?? '');
+  final price = TextEditingController(text: existing?.price.toStringAsFixed(2) ?? '0');
   final paid = TextEditingController(text: existing?.paid.toStringAsFixed(2) ?? '0');
   final laserMinutes = TextEditingController(text: existing?.laserMinutes.toStringAsFixed(0) ?? '0');
   final used = List<UsedMaterial>.of(existing?.usedMaterials ?? const <UsedMaterial>[]);
@@ -800,55 +800,61 @@ Future<void> showOrderForm(BuildContext context, StudioStore store, {Order? exis
             _field('العنوان', address),
             _field('نوع الطلب / المنتج', product, required: true),
             _field('الكمية', quantity, numeric: true, required: true),
+            if (existing == null)
+              const Padding(padding: EdgeInsets.only(bottom: 8),
+                child: Text('سيُسجّل الطلب أولاً قيد التنفيذ. أضف السعر والمواد والتكلفة عند تجهيز الطلب.',
+                  style: TextStyle(color: Colors.white70, fontSize: 11))),
             ListTile(title: const Text('تاريخ الطلب'), subtitle: Text(date(orderDate)),
               trailing: const Icon(Icons.event), onTap: () async {
                 final value = await showDatePicker(context: ctx, initialDate: orderDate,
                   firstDate: DateTime(2020), lastDate: DateTime(2100));
                 if (value != null) setForm(() => orderDate = value);
               }),
-            TextFormField(controller: price,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'سعر البيع بالدولار'),
-              validator: (v) => (double.tryParse(v ?? '') ?? -1) < 0 ? 'أدخل سعر بيع صحيح' : null,
-              onChanged: (_) => setForm(() {})),
-            const SizedBox(height: 10),
-            _field('الدفعة المقبوضة', paid, numeric: true),
-            const SizedBox(height: 12),
-            const Text('المواد المستخدمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
-            if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
-              child: Text('اختار الخشب أو الأكريليك أو التغليف من مخزونك.')),
-            ...used.asMap().entries.map((e) => ListTile(dense: true,
-              title: Text(e.value.name),
-              subtitle: Text('${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
-              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                Text(money(e.value.cost), style: const TextStyle(color: gold)),
-                IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
-                  onPressed: existing?.inventoryDeducted == true ? null : () => setForm(() => used.removeAt(e.key))),
+            if (existing != null) ...[
+              TextFormField(controller: price,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'سعر البيع بالدولار'),
+                validator: (v) => (double.tryParse(v ?? '') ?? -1) < 0 ? 'أدخل سعر بيع صحيح' : null,
+                onChanged: (_) => setForm(() {})),
+              const SizedBox(height: 10),
+              _field('الدفعة المقبوضة', paid, numeric: true),
+              const SizedBox(height: 12),
+              const Text('المواد المستخدمة', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 17)),
+              if (used.isEmpty) const Padding(padding: EdgeInsets.symmetric(vertical: 8),
+                child: Text('اختار الخشب أو الأكريليك أو التغليف من مخزونك.')),
+              ...used.asMap().entries.map((e) => ListTile(dense: true,
+                title: Text(e.value.name),
+                subtitle: Text('${e.value.amount.toStringAsFixed(2)} ${e.value.unit}'),
+                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Text(money(e.value.cost), style: const TextStyle(color: gold)),
+                  IconButton(tooltip: 'حذف المادة', icon: const Icon(Icons.close, size: 18),
+                    onPressed: existing.inventoryDeducted ? null : () => setForm(() => used.removeAt(e.key))),
+                ]))),
+              if (existing.inventoryDeducted)
+                const Text('تم خصم هذه المواد من المخزون؛ تعديل قائمة المواد مقفول حتى لا تختل الكميات. يمكنك تعديل بقية بيانات الطلب.',
+                  style: TextStyle(color: Colors.orangeAccent, fontSize: 11)),
+              OutlinedButton.icon(icon: const Icon(Icons.add),
+                label: const Text('إضافة مادة من المخزون'),
+                onPressed: existing.inventoryDeducted ? null : () async {
+                  final line = await chooseUsedMaterial(ctx, store);
+                  if (line != null) setForm(() => used.add(line));
+                }),
+              const SizedBox(height: 12),
+              TextFormField(controller: laserMinutes,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: const InputDecoration(labelText: 'دقائق تشغيل الليزر فقط'),
+                onChanged: (_) => setForm(() {})),
+              const Padding(padding: EdgeInsets.symmetric(vertical: 7),
+                child: Text('تقدير الكهرباء: 216 واط × 0.90 دولار/كيلوواط ساعة. بلا حساب وقت شغلك.',
+                  style: TextStyle(fontSize: 11, color: Colors.white70))),
+              Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
+                costLine('المواد والتغليف', materialCost),
+                costLine('كهرباء الليزر', electricity),
+                const Divider(),
+                costLine('إجمالي تكلفة الطلب', materialCost + electricity, bold: true),
+                costLine('ربح الطلب بعد التكاليف المباشرة', priceValue - materialCost - electricity, bold: true),
               ]))),
-            if (existing?.inventoryDeducted == true)
-              const Text('تم خصم هذه المواد من المخزون؛ تعديل قائمة المواد مقفول حتى لا تختل الكميات. يمكنك تعديل بقية بيانات الطلب.',
-                style: TextStyle(color: Colors.orangeAccent, fontSize: 11)),
-            OutlinedButton.icon(icon: const Icon(Icons.add),
-              label: const Text('إضافة مادة من المخزون'),
-              onPressed: existing?.inventoryDeducted == true ? null : () async {
-                final line = await chooseUsedMaterial(ctx, store);
-                if (line != null) setForm(() => used.add(line));
-              }),
-            const SizedBox(height: 12),
-            TextFormField(controller: laserMinutes,
-              keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              decoration: const InputDecoration(labelText: 'دقائق تشغيل الليزر فقط'),
-              onChanged: (_) => setForm(() {})),
-            const Padding(padding: EdgeInsets.symmetric(vertical: 7),
-              child: Text('تقدير الكهرباء: 216 واط × 0.90 دولار/كيلوواط ساعة. بلا حساب وقت شغلك.',
-                style: TextStyle(fontSize: 11, color: Colors.white70))),
-            Card(child: Padding(padding: const EdgeInsets.all(12), child: Column(children: [
-              costLine('المواد والتغليف', materialCost),
-              costLine('كهرباء الليزر', electricity),
-              const Divider(),
-              costLine('إجمالي تكلفة الطلب', materialCost + electricity, bold: true),
-              costLine('ربح الطلب بعد التكاليف المباشرة', priceValue - materialCost - electricity, bold: true),
-            ]))),
+            ],
             const SizedBox(height: 10),
             _field('ملاحظات', notes),
             ListTile(title: const Text('موعد التسليم'), subtitle: Text(date(due)),
